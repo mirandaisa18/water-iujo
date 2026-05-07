@@ -1,0 +1,168 @@
+========================================================================
+MAPA DE FUNCIONAMIENTO DEL SISTEMA WEB - WATER IUJO
+========================================================================
+Este documento es un "mapa mental" escrito. Explica cómo se conectan 
+todas las piezas del sistema, desde que el usuario hace clic en un botón, 
+hasta que los datos se guardan en el disco duro. 
+
+Piensa en este sistema como un restaurante:
+1. El Frontend (Vue.js) es el Mesero: Habla con el cliente y anota pedidos.
+2. El Backend (Express) es el Chef: Recibe el pedido, verifica si hay
+   ingredientes y prepara la comida.
+3. La Base de Datos (SQLite) es la Despensa: Donde se guardan todos los 
+   ingredientes físicos (los datos) de manera segura.
+
+------------------------------------------------------------------------
+1. EL FRONTEND: LO QUE VE EL USUARIO (Vue.js y Vite)
+------------------------------------------------------------------------
+El Frontend es la cara bonita del sistema. Todo lo que tiene colores,
+botones y letras vive aquí. Está construido con Vue.js.
+
+¿Cómo se organiza?
+- "Vistas" (Views): Son las pantallas completas (Ej: VentasView.vue, 
+  AdminDashboardView.vue).
+- "Componentes" (Components): Son piezas pequeñas reutilizables, como la 
+  barra lateral de navegación (Sidebar.vue).
+- "Enrutador" (Vue Router): Es el vigilante de las puertas. Decide quién 
+  puede entrar a qué pantalla dependiendo de su cargo (Rol).
+
+Ejemplo de cómo el Router (Vigilante) protege las rutas (index.ts):
+```javascript
+router.beforeEach((to, from) => {
+  const rol = sessionStorage.getItem('rolUsuario'); // Busca quién eres
+
+  // Si intentas ir al panel de Admin y no eres Admin, te saca.
+  if (to.path === '/admin' && rol !== 'admin') {
+    return '/'; // Te devuelve a la página principal
+  }
+  return true; // Si todo está bien, te deja pasar
+});
+```
+
+El Frontend también usa "Pinia" (El cerebro temporal). Es donde se guardan 
+los datos de la sesión actual (como el carrito de compras del cliente) 
+mientras el usuario navega, para que no se borren al cambiar de pantalla.
+
+------------------------------------------------------------------------
+2. EL BACKEND: EL CEREBRO DE SEGURIDAD Y LÓGICA (Node.js + Express)
+------------------------------------------------------------------------
+El Frontend NUNCA guarda cosas directamente en la base de datos por razones 
+de seguridad (sería como dejar que el cliente entre a la cocina y cocine). 
+En su lugar, el Frontend le "pide" al Backend que lo haga a través de una 
+"API" (Interfaz de Programación de Aplicaciones).
+
+¿Cómo funciona la API?
+El Backend expone "Rutas URL" (Endpoints). 
+Por ejemplo: `http://localhost:4000/api/ventas`.
+
+Cuando el Frontend hace una petición POST (Enviar datos) a esa URL, el 
+Backend ejecuta su "Controlador" (VentasController).
+
+Ejemplo del Controlador de Ventas en el Backend recibiendo datos:
+```typescript
+// El servidor (Backend) recibe la petición en req.body
+export const registrarVenta = async (req: Request, res: Response) => {
+    const orden = req.body; 
+    
+    // El Backend DUDA de todo, así que vuelve a revisar.
+    if (orden.total < 0) {
+        // Le responde al Frontend con un código de error (400 Bad Request)
+        return res.status(400).json({ error: "El total no puede ser negativo" });
+    }
+
+    // (Código para guardar en la base de datos...)
+    
+    // Si todo sale bien, le responde "200 OK" al Frontend.
+    res.json({ mensaje: "Venta guardada exitosamente" });
+};
+```
+
+------------------------------------------------------------------------
+3. LA BASE DE DATOS: EL DISCO DURO (SQLite)
+------------------------------------------------------------------------
+SQLite es un motor de base de datos rápido y ligero. Toda la información de 
+la empresa (Usuarios, Productos, Facturas, Reportes) vive en un solo 
+archivo físico llamado `database.sqlite`.
+
+¿Por qué es seguro?
+Porque el Backend es el único que sabe cómo hablar SQL (el idioma de las 
+bases de datos). El Backend usa instrucciones estrictas para leer o 
+escribir en este archivo.
+
+Ejemplo de cómo el Backend le habla a la Base de Datos (SQL):
+```sql
+-- El backend envía esta instrucción para saber cuántas ventas hay de recarga:
+SELECT COUNT(*) FROM Ventas WHERE tipo = 'Recarga';
+```
+
+------------------------------------------------------------------------
+4. EL FLUJO COMPLETO: MAPA PASO A PASO DE UNA COMPRA
+------------------------------------------------------------------------
+Para entender cómo todo se conecta, imagina que un Cajero va a vender 
+un botellón de agua a un Cliente en el sistema físico. Este es el viaje de 
+los datos:
+
+PASO 1: EL CAJERO HACE CLIC (Frontend / VentasView.vue)
+- El cajero agrega "Botellón Lleno" al carrito.
+- La pantalla muestra el total a pagar usando Vue.js.
+- El cajero le da al botón "Procesar Pago".
+
+PASO 2: EL PAQUETE VIAJA (Frontend -> Backend vía Axios)
+El Frontend empaqueta la orden (productos, total, cliente) y la envía 
+usando la herramienta "Axios" (el cartero).
+```javascript
+// El frontend grita: "¡Backend, guarda esta venta!"
+axios.post('http://localhost:4000/api/ventas', ordenEmpaquetada)
+```
+
+PASO 3: EL BACKEND REVISA (Backend / VentasController.ts)
+- El Controlador de Ventas en el servidor recibe la caja.
+- Verifica las reglas de negocio dictadas en el "enunciado.txt". 
+  Pregunta: "¿Es un botellón? Sí. ¿Hay botellones físicos? Sí."
+
+PASO 4: LA BASE DE DATOS GUARDA (Backend -> SQLite)
+- El Backend escribe la instrucción en la base de datos.
+- Descuenta "-1" del stock de botellones.
+- Inserta "+1" factura en el historial financiero.
+
+PASO 5: LA RESPUESTA VUELVE (Backend -> Frontend)
+- El Backend le devuelve un mensaje al cartero (Axios): `{ éxito: true }`.
+- El Frontend (Vue.js) recibe el éxito y le muestra al cajero una 
+  animación bonita o una ventanita verde de "Venta Exitosa".
+- El Frontend limpia el carrito para el siguiente cliente.
+
+------------------------------------------------------------------------
+5. MÓDULOS ESPECIALES DE CONEXIÓN EXTERNA
+------------------------------------------------------------------------
+Nuestro sistema no está aislado; a veces le pide ayuda al mundo exterior.
+Un gran ejemplo es el "Dashboard Administrativo". 
+El administrador necesita ver a cuánto está el Dólar (BCV y Paralelo) 
+hoy, para poder ajustar sus precios.
+
+En lugar de que el admin escriba el precio a mano todos los días, 
+hicimos que el Frontend de Vue tenga un puente directo con una 
+API del gobierno/externa (ve.dolarapi.com).
+
+```javascript
+// El Frontend va a un servidor de afuera de la empresa (API Externa)
+const res = await fetch('https://ve.dolarapi.com/v1/dolares');
+const data = await res.json();
+```
+Esto significa que el sistema WATER IUJO habla 3 idiomas:
+1. Vue habla con el Usuario Visualmente.
+2. Vue habla con Nuestro Backend usando APIs Internas.
+3. Vue habla con Internet usando APIs Externas.
+
+------------------------------------------------------------------------
+RESUMEN PARA RECORDAR
+------------------------------------------------------------------------
+- VUE (Frontend): Es la pintura y los botones. Su trabajo es recolectar datos 
+  y verse bonito.
+- EXPRESS (Backend): Es el cerebro de seguridad. Nunca confía en nadie y 
+  solo él puede tocar el disco duro.
+- SQLITE (Base de datos): Es el archivero. Guarda datos duros.
+- AXIOS / FETCH: Son los cables o "carteros" que llevan la información de 
+  un lado a otro.
+
+Toda esta arquitectura (Cliente-Servidor) garantiza que la aplicación sea 
+rápida, segura y escalable (lista para crecer sin romperse).

@@ -1,0 +1,39 @@
+h) Sistema de Gestión de Recargas y Ventas de botellones de agua (Eduar Suarez) 
+Módulos Funcionales y Requerimientos de Negocio
+1. Gestión de Productos e Inventario
+Diferenciación de Ítems:
+oInsumo: Agua (medida por litros o por capacidad de botellón estándar).
+oProducto Físico: Botellones nuevos (unidades).
+Control de Compras: Registro de adquisición de botellones vacíos a proveedores para alimentar el stock.
+2. Módulo de Ventas y Servicios
+Lógica de Recarga: Venta del servicio de llenado si el cliente trae su propio envase (Costo bajo: solo agua + proceso).
+Venta Integral: Venta de "Botellón Nuevo + Recarga". El sistema debe sumar automáticamente el costo del envase plástico más el líquido y descontar una unidad de botellón del inventario físico.
+Precios Dinámicos: Capacidad de ajustar el precio de la recarga según el tamaño (ej. 5L, 10L, 20L).
+3. Gestión de Gastos Operativos
+Registro de Egresos: Módulo para cargar mensualmente los costos fijos necesarios para el funcionamiento:
+oElectricidad.
+oInternet.
+oAlquiler del local.
+oAgua.
+4. Facturación Rápida
+Interfaz simplificada para ventas de mostrador.
+Registro de métodos de pago (Efectivo, Pago Móvil, Divisas).
+Requerimientos Contables (Sistematización)
+El sistema debe transformar las ventas diarias y los gastos en información financiera:
+Balance General:
+oActivos: Caja/Bancos e Inventario de botellones nuevos disponibles.
+oPasivos: Cuentas por pagar a proveedores.
+oPatrimonio: Capital y utilidades acumuladas.
+Estado de Resultados:
+oIngresos: Desglosados por "Solo Recargas" y "Venta de Botellones".
+oGastos: Electricidad, internet, alquiler y agua.
+oUtilidad Neta: La ganancia real tras restar los costos operativos.
+Reporte de Volumen: Litros totales despachados en un rango de fecha.
+ Especificaciones Técnicas y UX
+Acceso por Roles (RBAC):
+oAdministrador: Gestión de precios, compras de botellones y reportes contables.
+oDespachador/Cajero: Registro de ventas y recargas.
+Validaciones Críticas:
+oNo permitir la venta de "Botellón con recarga" si el stock de botellones físicos es cero.
+oAlerta de stock mínimo para la reposición de envases.
+Interfaz: Diseño limpio y rápido, optimizado para operaciones de alto flujo en mostrador.
