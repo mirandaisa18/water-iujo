@@ -18,6 +18,7 @@ database.sqlite
 backend/database.sqlite
 
 # IDE and OS files
+.github/
 .vscode/
 .idea/
 .DS_Store

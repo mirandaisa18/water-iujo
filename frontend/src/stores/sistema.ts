@@ -76,11 +76,61 @@ export const useSistemaStore = defineStore('sistema', () => {
   const tasaBCV = ref(leer('tasaBCV', 66.00));
   const metodosPagoConfig = ref(leer('metodosPagoConfig', ['Efectivo', 'Pago Móvil', 'Zelle', 'Tarjeta', 'Biopago', 'Transferencia']));
 
+  // --- AUTENTICACIÓN ---
+  const token = ref(localStorage.getItem('authToken') || '');
+  const isAuthenticated = ref(!!token.value);
+
+  // Configurar axios con token
+  const setupAxiosAuth = () => {
+    if (token.value) {
+      axios.defaults.headers.common['Authorization'] = `Bearer ${token.value}`;
+    } else {
+      delete axios.defaults.headers.common['Authorization'];
+    }
+  };
+  setupAxiosAuth();
+
+  // --- MÉTODOS DE AUTENTICACIÓN ---
+  const login = async (email: string, password: string) => {
+    try {
+      const response = await axios.post(`${API_URL}/auth/login`, { email, password });
+      if (response.data.success) {
+        token.value = response.data.token;
+        localStorage.setItem('authToken', token.value);
+        isAuthenticated.value = true;
+        rolUsuario.value = response.data.user.rol;
+        usuario.value = response.data.user;
+        sessionStorage.setItem('rolUsuario', rolUsuario.value);
+        sessionStorage.setItem('idUsuario', usuario.value.id);
+        setupAxiosAuth();
+        return { success: true };
+      }
+    } catch (error: any) {
+      return { success: false, error: error.response?.data?.error || 'Error de conexión' };
+    }
+  };
+
+  const logout = async () => {
+    try {
+      await axios.post(`${API_URL}/auth/logout`);
+    } catch (error) {
+      console.error('Error en logout:', error);
+    } finally {
+      token.value = '';
+      localStorage.removeItem('authToken');
+      isAuthenticated.value = false;
+      rolUsuario.value = '';
+      usuario.value = { id: '', nombre: '', rol: '' };
+      sessionStorage.removeItem('rolUsuario');
+      sessionStorage.removeItem('idUsuario');
+      delete axios.defaults.headers.common['Authorization'];
+    }
+  };
+
   // --- MÉTODOS DE BASE DE DATOS (BACKEND) ---
   const fetchClientes = async () => {
     try {
-      const config = { headers: { 'x-user-role': rolUsuario.value } };
-      const res = await axios.get(`${API_URL}/clients`, config);
+      const res = await axios.get(`${API_URL}/clients`);
       // Normalizamos la data para que el frontend no falle si el backend cambia
       listaClientes.value = (res.data || []).map((c: any) => ({
         id: c.id || c.Cedúla_Cliente,
@@ -98,8 +148,7 @@ export const useSistemaStore = defineStore('sistema', () => {
 
   const buscarClientesDB = async (query: string) => {
     try {
-      const config = { headers: { 'x-user-role': rolUsuario.value } };
-      const res = await axios.get(`${API_URL}/clientes/buscar?q=${query}`, config);
+      const res = await axios.get(`${API_URL}/clientes/buscar?q=${query}`);
       return res.data;
     } catch (err) {
       console.error('Error searching clients in DB', err);
@@ -109,7 +158,6 @@ export const useSistemaStore = defineStore('sistema', () => {
 
   const guardarClienteDB = async (cli: any) => {
     try {
-      const config = { headers: { 'x-user-role': rolUsuario.value } };
       const payload = {
         nombre: cli.nombre,
         cedula: cli.cedula || cli.rif || cli.cedulaRif,
@@ -118,7 +166,7 @@ export const useSistemaStore = defineStore('sistema', () => {
         email: cli.email || '',
         origen: cli.origen || 'POS'
       };
-      const res = await axios.post(`${API_URL}/clientes/registrar`, payload, config);
+      const res = await axios.post(`${API_URL}/clientes/registrar`, payload);
       await fetchClientes(); // Refresh list
       return res.data; // Retornar el cliente creado
     } catch (err: any) {
@@ -132,13 +180,7 @@ export const useSistemaStore = defineStore('sistema', () => {
 
   const fetchHistorialVentas = async () => {
     try {
-      const config = { 
-        headers: { 
-          'x-user-role': rolUsuario.value,
-          'x-user-id': usuario.value?.cedula || usuario.value?.id 
-        } 
-      };
-      const res = await axios.get(`${API_URL}/ventas/historial`, config);
+      const res = await axios.get(`${API_URL}/ventas/historial`);
       const data = res.data || [];
       historialVentas.value = data;
       
@@ -292,8 +334,7 @@ export const useSistemaStore = defineStore('sistema', () => {
 
   const fetchGastos = async () => {
     try {
-      const config = { headers: { 'x-user-role': rolUsuario.value } };
-      const res = await axios.get(`${API_URL}/gastos`, config);
+      const res = await axios.get(`${API_URL}/gastos`);
       gastos.value = res.data;
     } catch (err) {
       console.error('Error fetching gastos from DB', err);
@@ -302,8 +343,7 @@ export const useSistemaStore = defineStore('sistema', () => {
 
   const registrarGastoGlobal = async (gasto: any) => {
     try {
-      const config = { headers: { 'x-user-role': rolUsuario.value } };
-      await axios.post(`${API_URL}/gastos`, gasto, config);
+      await axios.post(`${API_URL}/gastos`, gasto);
       await fetchGastos();
     } catch (err) {
       console.error('Error saving gasto to DB', err);
@@ -312,8 +352,7 @@ export const useSistemaStore = defineStore('sistema', () => {
 
   const fetchCompras = async () => {
     try {
-      const config = { headers: { 'x-user-role': rolUsuario.value } };
-      const res = await axios.get(`${API_URL}/compras`, config);
+      const res = await axios.get(`${API_URL}/compras`);
       compras.value = res.data;
     } catch (err) {
       console.error('Error fetching compras from DB', err);
@@ -322,8 +361,7 @@ export const useSistemaStore = defineStore('sistema', () => {
 
   const fetchInventario = async () => {
     try {
-      const config = { headers: { 'x-user-role': rolUsuario.value } };
-      const res = await axios.get(`${API_URL}/inventario`, config);
+      const res = await axios.get(`${API_URL}/inventario`);
       inventario.value = res.data;
     } catch (err) {
       console.error('Error fetching inventario from DB', err);
@@ -332,8 +370,7 @@ export const useSistemaStore = defineStore('sistema', () => {
 
   const resetearBaseDeDatos = async () => {
     try {
-      const config = { headers: { 'x-user-role': rolUsuario.value } };
-      await axios.post(`${API_URL}/system/reset`, {}, config);
+      await axios.post(`${API_URL}/system/reset`, {});
       
       // Reset local state for immediate feedback
       proximoNumeroFactura.value = 0;
@@ -356,8 +393,7 @@ export const useSistemaStore = defineStore('sistema', () => {
 
   const reiniciarCatalogoDB = async () => {
     try {
-      const config = { headers: { 'x-user-role': rolUsuario.value } };
-      await axios.post(`${API_URL}/system/reset-catalog`, {}, config);
+      await axios.post(`${API_URL}/system/reset-catalog`, {});
     } catch (err) {
       console.error('Error resetting catalog', err);
     }
@@ -537,52 +573,61 @@ export const useSistemaStore = defineStore('sistema', () => {
   }
 
   return {
+    // Estado
+    listaClientes,
     tickets,
-    ventasDelDia,
-    ingresosDelDia,
-    rolUsuario,
-    tasaBCV,
+    historialVentas,
+    gastos,
+    compras,
+    inventario,
+    usuarios,
     proximoNumeroFactura,
+    ingresosDelDia,
+    ventasDelDia,
+    rolUsuario,
+    usuario,
+    listaEntregas,
+    tasaBCV,
+    metodosPagoConfig,
+    token,
+    isAuthenticated,
     perfilUsuario,
     configuracionNegocio,
     preferenciasPOS,
     pedidosPendientes,
-    gastos,
-    compras,
-    inventario,
-    listaEntregas,
-    listaClientes,
-    usuarios,
+
+    // Métodos de autenticación
+    login,
+    logout,
+
+    // Métodos de DB
     fetchClientes,
     buscarClientesDB,
-    fetchGastos,
-    fetchCompras,
+    guardarClienteDB,
+    fetchHistorialVentas,
     fetchInventario,
+    fetchGastos,
+    actualizarTasa,
+    registrarVentaGlobal,
+    fetchGeneralData,
+    registrarGastoGlobal,
+    fetchCompras,
     resetearBaseDeDatos,
     reiniciarCatalogoDB,
-    guardarClienteDB,
-    registrarVentaGlobal,
-    registrarGastoGlobal,
-    agregarPedidoPendiente,
-    resolverPedido,
-    asignarEntrega,
-    actualizarEstatusEntrega,
-    agregarMensajeChat,
+
+    // Métodos locales
     guardarUsuario,
     eliminarUsuario,
+    incrementarFactura,
     actualizarPerfil,
     actualizarNegocio,
     actualizarPreferencias,
-    actualizarTasa,
-    incrementarFactura,
     resetearContador,
-    iniciarSesion,
-    persistirTodo,
-    cerrarSesion,
-    usuario,
-    historialVentas,
-    fetchHistorialVentas,
-    fetchGeneralData,
-    metodosPagoConfig
+    asignarEntrega,
+    actualizarEstatusEntrega,
+    agregarMensajeChat,
+    agregarPedidoPendiente,
+    resolverPedido,
+    persistirTodo
   }
 } )

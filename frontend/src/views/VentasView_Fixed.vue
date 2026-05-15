@@ -1292,7 +1292,7 @@ const calcularRutaFinal = () => {
     return;
   }
 
-  direccionDeliverySimple.value = validStops.map(d => d.direccion).join(' �?' ');
+  direccionDeliverySimple.value = validStops.map(d => d.direccion).join(' → ');
 
   const coordsString = [coordOrigen.value, ...validStops.map(d => [d.lat, d.lng])]
     .map(c => `${c[1]},${c[0]}`)

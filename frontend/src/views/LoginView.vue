@@ -75,24 +75,20 @@ const mensajeError = ref('');
 
 
 
-const iniciarSesion = () => {
+const iniciarSesion = async () => {
   mensajeError.value = '';
 
-  const userEncontrado = store.usuarios.find(u => 
-     u.email === usuario.value && 
-     u.password === password.value && 
-     u.status === 'Activo'
-  );
+  const result = await store.login(usuario.value, password.value);
 
-  if (userEncontrado) {
-    store.iniciarSesion(userEncontrado.rol, userEncontrado);
-    if(userEncontrado.rol === 'admin') router.push('/admin');
-    else if(userEncontrado.rol === 'cajero') router.push('/ventas');
-    else if(userEncontrado.rol === 'delivery') router.push('/delivery');
-    else if(userEncontrado.rol === 'cliente') router.push('/cliente');
+  if (result.success) {
+    // Redirigir según el rol
+    if (store.rolUsuario === 'admin') router.push('/admin');
+    else if (store.rolUsuario === 'cajero') router.push('/ventas');
+    else if (store.rolUsuario === 'delivery') router.push('/delivery');
+    else if (store.rolUsuario === 'cliente') router.push('/cliente');
     else router.push('/');
   } else {
-    mensajeError.value = 'Usuario o contraseña incorrectos, o cuenta inactiva o eliminada.';
+    mensajeError.value = result.error;
   }
 };
 </script>

@@ -9,9 +9,15 @@ import { getMantenimientos, registrarMantenimiento } from '../controllers/Manten
 import { getBalanceReport, getVolumeReport, getProductsReport, getPaymentsReport, getUsersActivityReport } from '../controllers/ReportController';
 import { getInventario, updateInventarioItem, deleteInventarioItem, createInventarioItem } from '../controllers/InventarioController';
 import { descargarRespaldo, formatearSistema, reiniciarCatalogo } from '../controllers/SystemController';
+import { login, logout, verifyToken } from '../controllers/AuthController';
 import { checkRole } from '../middleware/authMiddleware';
 
 const router = Router();
+
+// --- RUTAS DE AUTENTICACIÓN ---
+router.post('/auth/login', login);
+router.post('/auth/logout', logout);
+router.get('/auth/verify', verifyToken);
 
 // Endpoint Clientes
 router.get('/clients', checkRole(['admin', 'cajero']), getClients);

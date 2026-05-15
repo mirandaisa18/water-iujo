@@ -764,8 +764,8 @@ watch(requiereDelivery, (val) => {
 
 
 
-const cerrarSesion = () => {
-  store.cerrarSesion();
+const cerrarSesion = async () => {
+  await store.logout();
   router.push('/login');
 };
 

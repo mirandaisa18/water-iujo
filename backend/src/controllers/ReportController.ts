@@ -3,43 +3,32 @@ import { sequelize } from '../config/db';
 
 export const getBalanceReport = async (req: Request, res: Response) => {
     try {
-        // 1. Activos = (suma de ventas) + (suma de stock * precio_venta de botellones)
-        // Nota: Asumimos que los productos tienen 'stock' y 'Precio_Producto'
-        const [ventasData]: any = await sequelize.query(`SELECT SUM(total) as suma_ventas FROM Venta`);
+        const [ventasData]: any = await sequelize.query(`SELECT SUM(total_usd) as suma_ventas FROM ventas`);
         const sumaVentas = ventasData[0]?.suma_ventas || 0;
 
-        const [stockData]: any = await sequelize.query(`
-            SELECT SUM(stock * Precio_Producto) as valor_inventario 
-            FROM Producto 
-            WHERE tipo = 'botellon' OR Nombre_Prodcuto LIKE '%botellon%'
+        const [inventarioData]: any = await sequelize.query(`
+            SELECT SUM(
+                COALESCE(
+                    (SELECT s.Cantidad FROM Stock s WHERE s.ID_Producto = p.ID_Producto ORDER BY s.Fecha_Movimiento DESC LIMIT 1),
+                    0
+                ) * COALESCE(p.Precio_Producto, 0)
+            ) as valor_inventario
+            FROM Producto p
         `);
-        // If 'stock' column doesn't exist on Producto (it is on 'productos' based on previous logic), 
-        // let's try the table 'productos' since VentasController uses it.
-        // I will do a try/catch for the query just in case it's named differently.
-        let valorInventario = 0;
-        try {
-            const [prodData]: any = await sequelize.query(`SELECT SUM(stock * precioVenta) as valor FROM productos`);
-            valorInventario = prodData[0]?.valor || 0;
-        } catch (e) {
-            // fallback if it fails
-            valorInventario = stockData[0]?.valor_inventario || 0;
-        }
+        const valorInventario = inventarioData[0]?.valor_inventario || 0;
 
         const activos = sumaVentas + valorInventario;
 
-        // 2. Pasivos = sumatoria de deudas a proveedores (compras)
         const [comprasData]: any = await sequelize.query(`SELECT SUM(total) as suma_compras FROM compras`);
         const pasivos = comprasData[0]?.suma_compras || 0;
 
-        // 3. Patrimonio = Activos - Pasivos
         const patrimonio = activos - pasivos;
 
-        // 4. Estado de Resultados (Ingresos, Gastos, Utilidad)
         const [ingresosRecargas]: any = await sequelize.query(`
-            SELECT SUM(total) as ingresos FROM Venta WHERE tipo_venta = 'solo_recarga'
+            SELECT SUM(total_usd) as ingresos FROM ventas WHERE tipo_venta = 'solo_recarga'
         `);
         const [ingresosBotellones]: any = await sequelize.query(`
-            SELECT SUM(total) as ingresos FROM Venta WHERE tipo_venta IN ('botellon_nuevo', 'combo')
+            SELECT SUM(total_usd) as ingresos FROM ventas WHERE tipo_venta IN ('botellon_nuevo', 'combo')
         `);
         const totalIngresos = (ingresosRecargas[0]?.ingresos || 0) + (ingresosBotellones[0]?.ingresos || 0);
 
@@ -74,23 +63,35 @@ export const getVolumeReport = async (req: Request, res: Response) => {
         }
 
         let query = `
-            SELECT SUM(DV.cantidad * DV.tamanio_litros) as total_litros 
-            FROM Detalle_Venta DV
-            JOIN Venta V ON DV.ID_venta = V.ID_Venta
+            SELECT SUM(dv.cantidad * dv.tamanio_litros) as total_litros
+            FROM detalle_ventas dv
+            JOIN ventas v ON dv.venta_id = v.id
         `;
         const replacements: any[] = [];
 
         if (fechaInicio && fechaFin) {
-            query += ` WHERE V.Fecha_hora BETWEEN ? AND ?`;
-            // Add 23:59:59 to fechaFin to include the whole day
+            query += ` WHERE v.fecha BETWEEN ? AND ?`;
             replacements.push(fechaInicio, `${fechaFin} 23:59:59`);
         }
 
         const [volumenData]: any = await sequelize.query(query, { replacements });
-        const total_litros = volumenData[0]?.total_litros || 0;
+        let total_litros = volumenData[0]?.total_litros || 0;
 
-        // Mocking trend data for the chart, ideally this comes from a GROUP BY query
-        // Let's generate a basic trend if needed, or just return the total.
+        if (!total_litros) {
+            const [fallbackData]: any = await sequelize.query(`
+                SELECT SUM(dv.cantidad * 
+                    COALESCE(dv.tamanio_litros,
+                        CAST(REPLACE(REPLACE(p.Nombre_Prodcuto, 'L', ''), ' ', '') AS REAL)
+                    )
+                ) as litros
+                FROM detalle_ventas dv
+                LEFT JOIN Producto p ON dv.producto_id = p.ID_Producto
+                JOIN ventas v ON dv.venta_id = v.id
+                ${fechaInicio && fechaFin ? 'WHERE v.fecha BETWEEN ? AND ?' : ''}
+            `, { replacements: fechaInicio && fechaFin ? replacements : [] });
+            total_litros = fallbackData[0]?.litros || 0;
+        }
+
         const tendencia_semanal = [
             { fecha: 'Lun', litros: total_litros * 0.1 },
             { fecha: 'Mar', litros: total_litros * 0.15 },
@@ -105,21 +106,66 @@ export const getVolumeReport = async (req: Request, res: Response) => {
             total_litros_mes: total_litros,
             tendencia_semanal
         });
-    } catch (e) { 
+    } catch (e) {
         console.error('Error in getVolumeReport:', e);
-        res.status(500).json({ error: 'Error calculando volumen' }); 
+        res.status(500).json({ error: 'Error calculando volumen' });
     }
 };
 
-// ... other reports remain stubbed for now if not explicitly requested
 export const getProductsReport = async (req: Request, res: Response) => {
-    res.status(501).json({ error: "No implementado aún" });
+    try {
+        const [reportData]: any = await sequelize.query(`
+            SELECT dv.producto_id as id,
+                   p.Nombre_Prodcuto as nombre,
+                   SUM(dv.cantidad) as cantidad_vendida,
+                   SUM(dv.subtotal) as total_ventas
+            FROM detalle_ventas dv
+            LEFT JOIN Producto p ON dv.producto_id = p.ID_Producto
+            GROUP BY dv.producto_id
+            ORDER BY total_ventas DESC
+            LIMIT 20
+        `);
+
+        res.json(reportData);
+    } catch (e) {
+        console.error('Error in getProductsReport:', e);
+        res.status(500).json({ error: 'Error calculando reporte de productos' });
+    }
 };
 
 export const getPaymentsReport = async (req: Request, res: Response) => {
-    res.status(501).json({ error: "No implementado aún" });
+    try {
+        const [reportData]: any = await sequelize.query(`
+            SELECT metodo_pago as metodo,
+                   COUNT(*) as numero_ventas,
+                   SUM(total_usd) as total_usd
+            FROM ventas
+            GROUP BY metodo_pago
+            ORDER BY total_usd DESC
+        `);
+
+        res.json(reportData);
+    } catch (e) {
+        console.error('Error in getPaymentsReport:', e);
+        res.status(500).json({ error: 'Error calculando reporte de pagos' });
+    }
 };
 
 export const getUsersActivityReport = async (req: Request, res: Response) => {
-    res.status(501).json({ error: "No implementado aún" });
+    try {
+        const [activityData]: any = await sequelize.query(`
+            SELECT v.vendedor_id as vendedor,
+                   COUNT(*) as ventas_realizadas,
+                   SUM(v.total_usd) as total_usd,
+                   MAX(v.fecha) as ultima_venta
+            FROM ventas v
+            GROUP BY v.vendedor_id
+            ORDER BY ventas_realizadas DESC
+        `);
+
+        res.json(activityData);
+    } catch (e) {
+        console.error('Error in getUsersActivityReport:', e);
+        res.status(500).json({ error: 'Error calculando actividad de usuarios' });
+    }
 };

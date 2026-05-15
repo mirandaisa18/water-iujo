@@ -81,6 +81,18 @@
         <span class="texto-menu">Configuración</span>
       </RouterLink>
     </nav>
+
+    <!-- SECCIÓN DE USUARIO Y LOGOUT -->
+    <div class="usuario-section">
+      <div class="usuario-info">
+        <span class="usuario-nombre">{{ store.usuario.nombre }}</span>
+        <span class="usuario-rol">{{ store.rolUsuario }}</span>
+      </div>
+      <button @click="logout" class="btn-logout">
+        <span class="icono-logout">🚪</span>
+        <span class="texto-logout">Cerrar Sesión</span>
+      </button>
+    </div>
   </aside>
 </template>
 
@@ -96,6 +108,12 @@ const router = useRouter();
 const esAdmin = computed(() => store.rolUsuario === 'admin');
 const esCajero = computed(() => store.rolUsuario === 'cajero');
 const esDelivery = computed(() => store.rolUsuario === 'delivery');
+
+// Función de logout
+const logout = async () => {
+  await store.logout();
+  router.push('/login');
+};
 
 </script>
 
@@ -179,8 +197,65 @@ const esDelivery = computed(() => store.rolUsuario === 'delivery');
   .item-menu { flex-direction: column; gap: 5px; padding: 10px 5px; font-size: 10px; border-left: none; border-top: 3px solid transparent; }
   .item-menu.activo { border-left: none; border-top: 3px solid #3b82f6; }
   .texto-menu { display: none; }
+  .usuario-section { display: none; }
+}
+
+/* SECCIÓN DE USUARIO */
+.usuario-section {
+  margin-top: auto;
+  padding: 20px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.usuario-info {
+  margin-bottom: 15px;
+}
+
+.usuario-nombre {
+  display: block;
+  font-size: 14px;
+  font-weight: 600;
+  color: white;
+  margin-bottom: 2px;
+}
+
+.usuario-rol {
+  display: block;
+  font-size: 12px;
+  color: #8a98ac;
+  text-transform: capitalize;
+}
+
+.btn-logout {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 15px;
+  background: linear-gradient(135deg, #dc2626, #b91c1c);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-logout:hover {
+  background: linear-gradient(135deg, #b91c1c, #991b1b);
+  transform: translateY(-1px);
+}
+
+.icono-logout {
+  font-size: 16px;
+}
+
+.texto-logout {
+  flex: 1;
+  text-align: left;
 }
 
 .badge-sidebar-web { background: #ef4444; color: white; padding: 2px 8px; border-radius: 20px; font-size: 11px; font-weight: bold; animation: pulseRed 2s infinite; }
 @keyframes pulseRed { 0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); } 70% { box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); } 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); } }
-</style>
+</style>

@@ -1,21 +1,29 @@
 import { Request, Response, NextFunction } from 'express';
+import jwt from 'jsonwebtoken';
+
+const JWT_SECRET = process.env.JWT_SECRET || 'default_secret_key_change_in_production';
 
 export const checkRole = (rolesPermitidos: string[]) => {
     return (req: Request, res: Response, next: NextFunction) => {
-        // En una app real, el rol vendría del JWT decodificado
-        // Para este proyecto, lo leeremos de un header 'x-user-role' enviado por el frontend
-        const userRole = req.headers['x-user-role'] as string;
-
-        if (!userRole) {
-            return res.status(401).json({ error: 'No se especificó un rol de usuario' });
+        const authHeader = req.headers.authorization;
+        if (!authHeader || !authHeader.startsWith('Bearer ')) {
+            return res.status(401).json({ error: 'Token de autenticación requerido' });
         }
 
-        if (!rolesPermitidos.includes(userRole)) {
-            return res.status(403).json({ 
-                error: `Acceso denegado. Tu rol (${userRole}) no tiene permiso para esta acción.` 
-            });
-        }
+        const token = authHeader.split(' ')[1];
+        try {
+            const decoded = jwt.verify(token, JWT_SECRET) as any;
+            req.user = decoded; // Adjuntar info del usuario al request
 
-        next();
+            if (!rolesPermitidos.includes(decoded.rol)) {
+                return res.status(403).json({
+                    error: `Acceso denegado. Tu rol (${decoded.rol}) no tiene permiso para esta acción.`
+                });
+            }
+
+            next();
+        } catch (error) {
+            return res.status(401).json({ error: 'Token inválido o expirado' });
+        }
     };
 };
