@@ -332,7 +332,10 @@
                 <div class="form-group-premium half">
                   <label>Categoría/Tipo</label>
                   <div class="input-modern-wrapper">
-                    <input type="text" v-model="formEdit.tipo">
+                    <select v-model="formEdit.tipo" class="premium-select">
+                      <option value="" disabled>Seleccione...</option>
+                      <option v-for="cat in categorias" :key="cat" :value="cat">{{ cat }}</option>
+                    </select>
                   </div>
                 </div>
                 <div class="form-group-premium half">
@@ -461,6 +464,7 @@ const listaProductos = ref([]);
 const mostrarModalEdit = ref(false);
 const modoEdicionProducto = ref(true);
 const formEdit = ref({});
+const categorias = ['Botellón', 'Servicio', 'Combo', 'Filtro', 'Insumo', 'Repuesto', 'Otro'];
 
 // --- ESTADO COMPRAS / PROVEEDORES ---
 const mostrarModalCompra = ref(false);
