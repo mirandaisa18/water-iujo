@@ -407,24 +407,52 @@ export const useSistemaStore = defineStore('sistema', () => {
     }
   };
   // --- CRUD USUARIOS ---
-  const guardarUsuario = (user: any) => {
-    if(user.id) {
-       const index = usuarios.value.findIndex((u:any) => u.id === user.id);
-       if(index !== -1) usuarios.value[index] = {...user};
-    } else {
-       user.id = Date.now().toString();
-       user.fechaRegistro = new Date().toLocaleDateString('en-GB');
-       user.status = 'Activo';
-       usuarios.value.push(user);
+  const fetchUsuarios = async () => {
+    try {
+      const res = await axios.get(`${API_URL}/usuarios`);
+      usuarios.value = res.data.map((u: any) => ({
+          id: u.Cedula_Usuario,
+          nombre: u.Nombre,
+          correo: u.Correo,
+          rol: u.ID_Rol
+      }));
+    } catch (err) {
+      console.error('Error fetching usuarios:', err);
     }
-    guardar('usuarios_reales', usuarios.value);
   };
 
-  const eliminarUsuario = (id: string) => {
-    const idx = usuarios.value.findIndex((u:any) => u.id === id);
-    if(idx !== -1) {
-       usuarios.value.splice(idx, 1);
-       guardar('usuarios_reales', usuarios.value);
+  const guardarUsuario = async (user: any) => {
+    try {
+        const payload = {
+            cedula: user.id || undefined,
+            nombre: user.nombre,
+            apellido: '',
+            correo: user.correo,
+            rol: user.rol === 'Administrador' ? 'admin' : (user.rol === 'Despachador' ? 'delivery' : (user.rol === 'Cajero' ? 'cajero' : user.rol)),
+            password: user.password || 'password123'
+        };
+
+        if(user.id && usuarios.value.some((u: any) => u.id === user.id)) {
+            // Update
+            await axios.put(`${API_URL}/usuarios/${user.id}`, payload);
+        } else {
+            // Create
+            await axios.post(`${API_URL}/usuarios`, payload);
+        }
+        await fetchUsuarios();
+    } catch (error) {
+        console.error('Error guardando usuario:', error);
+        alert('Error al guardar el usuario en la base de datos');
+    }
+  };
+
+  const eliminarUsuario = async (id: string) => {
+    try {
+        await axios.delete(`${API_URL}/usuarios/${id}`);
+        await fetchUsuarios();
+    } catch (error) {
+        console.error('Error eliminando usuario:', error);
+        alert('Error al eliminar el usuario');
     }
   };
 
@@ -618,6 +646,7 @@ export const useSistemaStore = defineStore('sistema', () => {
     actualizarTasa,
     registrarVentaGlobal,
     fetchGeneralData,
+    fetchUsuarios,
     registrarGastoGlobal,
     fetchCompras,
     resetearBaseDeDatos,

@@ -8,6 +8,7 @@ import { getProveedores, crearProveedor, updateProveedor, deleteProveedor, getCo
 import { getMantenimientos, registrarMantenimiento } from '../controllers/MantenimientoController';
 import { getBalanceReport, getVolumeReport, getProductsReport, getPaymentsReport, getUsersActivityReport } from '../controllers/ReportController';
 import { getInventario, updateInventarioItem, deleteInventarioItem, createInventarioItem } from '../controllers/InventarioController';
+import { getEmpleados, registrarEmpleado, actualizarEmpleado, eliminarEmpleado } from '../controllers/UsuariosController';
 import { descargarRespaldo, formatearSistema, reiniciarCatalogo } from '../controllers/SystemController';
 import { login, logout, verifyToken } from '../controllers/AuthController';
 import { checkRole } from '../middleware/authMiddleware';
@@ -18,6 +19,12 @@ const router = Router();
 router.post('/auth/login', login);
 router.post('/auth/logout', logout);
 router.get('/auth/verify', verifyToken);
+
+// Endpoint Usuarios
+router.get('/usuarios', checkRole(['admin']), getEmpleados);
+router.post('/usuarios', checkRole(['admin']), registrarEmpleado);
+router.put('/usuarios/:id', checkRole(['admin']), actualizarEmpleado);
+router.delete('/usuarios/:id', checkRole(['admin']), eliminarEmpleado);
 
 // Endpoint Clientes
 router.get('/clients', checkRole(['admin', 'cajero']), getClients);

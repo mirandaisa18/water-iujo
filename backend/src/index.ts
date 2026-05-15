@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import { sequelize } from './config/db';
+import { initDB } from './config/initDB';
 import apiRoutes from './routes/api';
 
 // Configurar Dotenv
@@ -19,8 +20,9 @@ app.use(express.urlencoded({ extended: true }));
 app.use('/api', apiRoutes);
 
 // Sincronizar Base de Datos (Sin Seedings duros, operamos en SQLite directo)
-sequelize.sync({ force: false }).then(() => {
+sequelize.sync({ force: false }).then(async () => {
   console.log('Database connected & synced via Raw SQL');
+  await initDB();
   
   // Iniciar Servidor
   app.listen(port, () => {

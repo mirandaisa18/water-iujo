@@ -151,16 +151,16 @@
               <tbody>
                 <tr v-for="user in usuariosFiltrados" :key="user.id" :class="{'fila-inactiva': user.status === 'Inactivo'}">
                   <td class="td-usuario">
-                    <div class="mini-avatar" :class="colorBgBadge(user.rol)">{{ user.nombre.charAt(0).toUpperCase() }}</div>
+                    <div class="mini-avatar" :class="colorBgBadge(user.rol)">{{ (user.nombre || '?').charAt(0).toUpperCase() }}</div>
                     <span class="negrita">{{ user.nombre }}</span>
                   </td>
-                  <td>{{ user.email }}</td>
+                  <td>{{ user.correo || user.email }}</td>
                   <td><span class="badge" :class="colorBadge(user.rol)">{{ (user.rol || 'USER').toUpperCase() }}</span></td>
-                  <td>{{ user.fechaRegistro }}</td>
-                  <td><span class="badge-status" :class="(user.status || '').toLowerCase()">{{ user.status }}</span></td>
+                  <td>{{ user.fechaRegistro || '-' }}</td>
+                  <td><span class="badge-status" :class="(user.status || 'Activo').toLowerCase()">{{ user.status || 'Activo' }}</span></td>
                   <td class="acciones-col">
                     <span @click="abrirEdicion(user)">✏️ Editar</span>
-                    <span style="margin-left:8px; color:#ef4444;" v-if="user.email !== 'admin@wateriujo.com'" @click="borrarUsuario(user.id)">🗑️ Borrar</span>
+                    <span style="margin-left:8px; color:#ef4444;" v-if="(user.correo || user.email) !== 'admin@water.com'" @click="borrarUsuario(user.id)">🗑️ Borrar</span>
                   </td>
                 </tr>
                 <tr v-if="usuariosFiltrados.length === 0">
@@ -260,10 +260,13 @@ const store = useSistemaStore();
 const esAdmin = computed(() => store.rolUsuario === 'admin');
 const esCajero = computed(() => store.rolUsuario === 'cajero');
 
-onMounted(() => {
+onMounted(async () => {
   if (!esAdmin.value && !esCajero.value) {
     alert('Acceso restringido: Esta sección es solo para el personal autorizado.');
     router.push('/');
+  }
+  if (esAdmin.value) {
+    await store.fetchUsuarios();
   }
 });
 
@@ -289,20 +292,35 @@ const initForm = () => {
 };
 
 const abrirEdicion = (u) => {
-   formUser.value = { ...u };
+   formUser.value = { 
+     id: u.id, 
+     nombre: u.nombre, 
+     email: u.correo || u.email, 
+     password: '', 
+     cedula: u.id, 
+     telefono: u.telefono || '', 
+     direccion: u.direccion || '', 
+     rol: u.rol, 
+     status: 'Activo' 
+   };
    esEdicion.value = true;
    mostrarFormulario.value = true;
    window.scrollTo({ top: 0, behavior: 'smooth' });
 };
 
-const borrarUsuario = (id) => {
+const borrarUsuario = async (id) => {
   if(confirm("¿Estás seguro de que deseas eliminar permanentemente a este usuario?")) {
-     store.eliminarUsuario(id);
+     await store.eliminarUsuario(id);
   }
 };
 
-const guardarDataUsuario = () => {
-   store.guardarUsuario({...formUser.value});
+const guardarDataUsuario = async () => {
+   // Mapear campos si es necesario
+   const userToSave = {
+     ...formUser.value,
+     correo: formUser.value.email
+   };
+   await store.guardarUsuario(userToSave);
    alert('Perfil guardado exitosamente');
    mostrarFormulario.value = false;
    initForm();
@@ -315,7 +333,7 @@ const usuariosFiltrados = computed(() => {
   if (!termino) return lista;
   return lista.filter(u => 
     (u.nombre || '').toLowerCase().includes(termino) || 
-    (u.email || '').toLowerCase().includes(termino) ||
+    (u.correo || u.email || '').toLowerCase().includes(termino) ||
     (u.rol || '').toLowerCase().includes(termino)
   );
 });
