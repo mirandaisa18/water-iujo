@@ -489,12 +489,8 @@ onMounted(async () => {
 const getAxiosConfig = () => ({ headers: { 'x-user-role': store.rolUsuario } });
 
 const cargarInventario = async () => {
-  try {
-    const res = await axios.get(`${API_URL}/inventario`, getAxiosConfig());
-    listaProductos.value = res.data;
-  } catch (error) {
-    console.error('Error cargando inventario:', error);
-  }
+  await store.fetchInventario();
+  listaProductos.value = store.inventario;
 };
 
 const eliminarProducto = async (id) => {
@@ -533,14 +529,14 @@ const guardarProducto = async () => {
     if (modoEdicionProducto.value) {
       const res = await axios.put(`${API_URL}/inventario/${formEdit.value.id}`, payload, config);
       if (res.data.success) {
-        alert('Producto actualizado correctamente');
+        alert('✅ Producto actualizado correctamente');
         mostrarModalEdit.value = false;
         await cargarInventario();
       }
     } else {
       const res = await axios.post(`${API_URL}/inventario`, payload, config);
       if (res.data.success) {
-        alert('Producto registrado exitosamente');
+        alert('✅ Producto registrado exitosamente');
         mostrarModalEdit.value = false;
         await cargarInventario();
       }

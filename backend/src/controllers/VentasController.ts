@@ -20,26 +20,40 @@ export const registrarVenta = async (req: Request, res: Response) => {
         }
 
         let cantidadBotellonesFisicos = 0;
+        let tieneCombo = false;
+        let tieneBotellonNuevo = false;
         
-        // 1. Identificar cuántos botellones físicos se requieren
+        // 1. Identificar cuántos botellones físicos se requieren y el tipo de venta
         for (const item of items) {
             const tipo = item.tipo ? item.tipo.toLowerCase() : '';
+            const nombre = (item.nombre || '').toLowerCase();
+            
+            if (tipo.includes('combo')) tieneCombo = true;
+            else if (tipo.includes('botellon') || tipo.includes('botellón') || nombre.includes('botellon') || nombre.includes('botellón')) {
+                if (!tipo.includes('recarga') && !nombre.includes('recarga')) {
+                    tieneBotellonNuevo = true;
+                }
+            }
+
             // Si el item es un combo o botellón nuevo, requiere descontar inventario físico
             if (tipo.includes('botellon') || tipo.includes('botellón') || tipo.includes('integral') || tipo.includes('combo')) {
-                // Solo si el item representa el envase físico
-                if (!item.esServicio || tipo.includes('integral') || tipo.includes('combo')) {
+                // Solo si el item representa el envase físico (no es solo el servicio de recarga)
+                if (!item.esServicio && (tipo.includes('integral') || tipo.includes('combo') || tipo.includes('botellon') || tipo.includes('botellón'))) {
                     cantidadBotellonesFisicos += item.cantidad;
                 }
             }
         }
 
-        // 2. Validar Stock (Regla 3: No permitir si stock = 0)
+        let tipoVentaFinal = 'solo_recarga';
+        if (tieneCombo) tipoVentaFinal = 'combo';
+        else if (tieneBotellonNuevo) tipoVentaFinal = 'botellon_nuevo';
+
+        // 2. Validar Stock (Regla 3: No permitir si stock = 0 o insuficiente)
         if (cantidadBotellonesFisicos > 0) {
-            // Buscamos el producto que represente el Botellón Nuevo de 20L
+            // Buscamos el producto que represente el Botellón Nuevo de 20L (B20N)
             const [stockData]: any = await sequelize.query(`
                 SELECT ID_Producto, Stock_Actual FROM Producto 
                 WHERE (ID_Producto = 'B20N' OR Nombre_Prodcuto LIKE '%Botellón%Nuevo%' OR Descripcion_Producto = 'botellon')
-                AND Stock_Actual > 0
                 LIMIT 1
             `, { transaction });
             
@@ -59,9 +73,19 @@ export const registrarVenta = async (req: Request, res: Response) => {
                 SET Stock_Actual = Stock_Actual - ? 
                 WHERE ID_Producto = ?
             `, { 
-                replacements: [cantidadBotellonesFisicos || 0, productoFisico?.ID_Producto || 'N/A'],
+                replacements: [cantidadBotellonesFisicos, productoFisico.ID_Producto],
                 transaction 
             });
+            
+            // Registrar movimiento en tabla Stock
+            await sequelize.query(`
+                INSERT INTO Stock (ID_Producto, Cantidad, Tipo_Movimiento, Fecha_Movimiento)
+                VALUES (?, ?, 'VENTA', CURRENT_TIMESTAMP)
+            `, {
+                replacements: [productoFisico.ID_Producto, -cantidadBotellonesFisicos],
+                transaction
+            });
+
             console.log(`DEBUG: Descontados ${cantidadBotellonesFisicos} botellones del producto ${productoFisico.ID_Producto}`);
         }
 
@@ -96,8 +120,8 @@ export const registrarVenta = async (req: Request, res: Response) => {
 
         // 6. Registrar la Venta en la tabla 'ventas'
         const ventaResult: any = await sequelize.query(`
-            INSERT INTO ventas (fecha, total_usd, total_bs, metodo_pago, cliente_id, tasa_bcv, delivery_costo, vendedor_id, referencia_pago, nombre_pagador, telefono_pagador, subtotal, iva)
-            VALUES (CURRENT_TIMESTAMP, :total, :totalBS, :metodo, :cliente, :tasa, :delivery, :vendedor, :ref, :pagador, :tel, :sub, :iva)
+            INSERT INTO ventas (fecha, total_usd, total_bs, metodo_pago, cliente_id, tasa_bcv, delivery_costo, vendedor_id, referencia_pago, nombre_pagador, telefono_pagador, subtotal, iva, tipo_venta)
+            VALUES (CURRENT_TIMESTAMP, :total, :totalBS, :metodo, :cliente, :tasa, :delivery, :vendedor, :ref, :pagador, :tel, :sub, :iva, :tipo_venta)
         `, {
             replacements: {
                 total: totalUSD || venta.monto || 0, 
@@ -111,7 +135,8 @@ export const registrarVenta = async (req: Request, res: Response) => {
                 pagador: pagador_nombre || null,
                 tel: pagador_telefono || null,
                 sub: venta.subtotalUSD || 0,
-                iva: venta.ivaUSD || 0
+                iva: venta.ivaUSD || 0,
+                tipo_venta: tipoVentaFinal
             },
             type: 'INSERT',
             transaction

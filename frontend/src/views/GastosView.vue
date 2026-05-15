@@ -89,11 +89,13 @@
             <label>Categoría</label>
             <select v-model="nuevoGasto.categoria" required>
               <option value="" disabled selected>Selecciona una categoría...</option>
-              <option value="insumos">Compra de Insumos</option>
-              <option value="mantenimiento">Mantenimiento de Equipos</option>
-              <option value="servicios">Servicios Básicos y Alquiler</option>
-              <option value="nomina">Nómina / Pago a Empleados</option>
-              <option value="otros">Otros Gastos</option>
+              <option value="Electricidad">Electricidad</option>
+              <option value="Internet">Internet</option>
+              <option value="Alquiler">Alquiler</option>
+              <option value="Agua">Agua</option>
+              <option value="Mantenimiento">Mantenimiento de Equipos</option>
+              <option value="Suministros">Compra de Suministros</option>
+              <option value="Otros">Otros Gastos</option>
             </select>
           </div>
           <div class="input-group">
@@ -200,10 +202,15 @@ const guardarGastoReal = async () => {
     metodo: nuevoGasto.value.metodo
   };
   
-  await store.registrarGastoGlobal(gasto);
-  mostrarFormulario.value = false;
-  nuevoGasto.value = { concepto: '', categoria: '', monto: null, metodo: 'efectivo' };
-  alert('Gasto registrado y persistido en el servidor.');
+  const res = await store.registrarGastoGlobal(gasto);
+  
+  if (res && res.success) {
+    mostrarFormulario.value = false;
+    nuevoGasto.value = { concepto: '', categoria: '', monto: null, metodo: 'efectivo' };
+    alert('✅ Gasto registrado y persistido en el servidor.');
+  } else {
+    alert(`❌ No se pudo registrar el gasto:\n\n${res?.error || 'Error desconocido'}`);
+  }
 };
 
 // Lógica de KPIs y Tabla
@@ -211,9 +218,9 @@ const curMonth = new Date().toISOString().substring(0, 7);
 const gastosDelMes = computed(() => store.gastos.filter(g => (g.fecha || '').startsWith(curMonth)));
 
 const kpiTotalMes = computed(() => gastosDelMes.value.reduce((s, g) => s + (g.monto || 0), 0));
-const kpiInsumos = computed(() => gastosDelMes.value.filter(g=>g.categoria==='insumos').reduce((s,g)=>s+(g.monto || 0),0));
-const kpiMantenimiento = computed(() => gastosDelMes.value.filter(g=>g.categoria==='mantenimiento').reduce((s,g)=>s+(g.monto || 0),0));
-const kpiServicios = computed(() => gastosDelMes.value.filter(g=>g.categoria==='servicios').reduce((s,g)=>s+(g.monto || 0),0));
+const kpiInsumos = computed(() => gastosDelMes.value.filter(g=>g.categoria==='Suministros').reduce((s,g)=>s+(g.monto || 0),0));
+const kpiMantenimiento = computed(() => gastosDelMes.value.filter(g=>g.categoria==='Mantenimiento').reduce((s,g)=>s+(g.monto || 0),0));
+const kpiServicios = computed(() => gastosDelMes.value.filter(g=>['Electricidad', 'Internet', 'Agua', 'Alquiler'].includes(g.categoria)).reduce((s,g)=>s+(g.monto || 0),0));
 
 const filtroGasto = ref('');
 const gastosFiltrados = computed(() => {
@@ -224,12 +231,11 @@ const gastosFiltrados = computed(() => {
 const totalGastosFiltrados = computed(() => gastosFiltrados.value.reduce((s,g) => s+(g.monto || 0), 0));
 
 const colorCategoria = (cat) => {
-  const m = { insumos: 'naranja', mantenimiento: 'azul', servicios: 'morado', nomina: 'naranja', otros: 'naranja' };
+  const m = { Suministros: 'naranja', Mantenimiento: 'azul', Electricidad: 'morado', Internet: 'morado', Agua: 'morado', Alquiler: 'morado', Otros: 'naranja' };
   return m[cat] || 'azul';
 };
 const tituloCategoria = (cat) => {
-  const m = { insumos: 'Insumos', mantenimiento: 'Mantenimiento', servicios: 'Servicios Fijos', nomina: 'Nómina', otros: 'Otro Gasto' };
-  return m[cat] || cat;
+  return cat; // Since we are now using the exact display names as values
 };
 
 const verComprobante = (gasto) => {

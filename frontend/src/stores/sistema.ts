@@ -274,6 +274,9 @@ export const useSistemaStore = defineStore('sistema', () => {
         ingresosDelDia.value = tickets.value.reduce((sum: any, t: any) => sum + (t.monto || 0), 0);
         guardar('tickets_reales', tickets.value);
 
+        // ACTUALIZAR INVENTARIO PARA REFLEJAR DESCUENTOS DE STOCK FÍSICO
+        fetchInventario();
+
         // Si el ticket trae info de delivery, crear entrega automáticamente
         if (ticket.delivery) {
           asignarEntrega({
@@ -343,10 +346,15 @@ export const useSistemaStore = defineStore('sistema', () => {
 
   const registrarGastoGlobal = async (gasto: any) => {
     try {
-      await axios.post(`${API_URL}/gastos`, gasto);
-      await fetchGastos();
-    } catch (err) {
+      const res = await axios.post(`${API_URL}/gastos`, gasto);
+      if (res.data.success) {
+        await fetchGastos();
+        return { success: true };
+      }
+      return { success: false, error: 'Error desconocido al registrar gasto' };
+    } catch (err: any) {
       console.error('Error saving gasto to DB', err);
+      return { success: false, error: err.response?.data?.error || 'Error de conexión con el servidor' };
     }
   };
 

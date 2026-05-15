@@ -27,22 +27,42 @@ export const registrarGasto = async (req: Request, res: Response) => {
     try {
         const { concepto, categoria, monto, metodo } = req.body;
 
+        const CATEGORIAS_VALIDAS = [
+            'Electricidad', 
+            'Internet', 
+            'Alquiler', 
+            'Agua', 
+            'Mantenimiento', 
+            'Suministros', 
+            'Otros'
+        ];
+
         if (!concepto || !categoria || monto === undefined || monto === null || !metodo) {
-            return res.status(400).json({ error: 'Faltan datos obligatorios para el gasto' });
+            return res.status(400).json({ error: 'Faltan datos obligatorios para el gasto (concepto, categoria, monto, metodo)' });
         }
 
-        if (monto <= 0) {
-            return res.status(400).json({ error: 'El monto debe ser mayor a 0' });
+        if (typeof monto !== 'number' || monto <= 0) {
+            return res.status(400).json({ error: 'El monto debe ser un número mayor a 0' });
+        }
+
+        if (!CATEGORIAS_VALIDAS.includes(categoria)) {
+            return res.status(400).json({ 
+                error: `Categoría inválida. Las permitidas son: ${CATEGORIAS_VALIDAS.join(', ')}` 
+            });
         }
 
         const [result]: any = await sequelize.query(`
-            INSERT INTO Gasto (Concepto, Categoria, Monto, Metodo) 
-            VALUES (?, ?, ?, ?)
+            INSERT INTO Gasto (Concepto, Categoria, Monto, Metodo, Fecha) 
+            VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
         `, {
             replacements: [concepto, categoria, monto, metodo]
         });
 
-        res.status(201).json({ success: true, message: 'Gasto registrado correctamente', id: result });
+        res.status(201).json({ 
+            success: true, 
+            message: 'Gasto registrado correctamente', 
+            id: result 
+        });
     } catch (error) {
         console.error('Error registering gasto:', error);
         res.status(500).json({ error: 'Error al registrar el gasto' });

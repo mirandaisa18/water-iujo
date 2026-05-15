@@ -537,10 +537,16 @@ import TicketPos from '../components/TicketPos.vue';
 import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { useSistemaStore } from '../stores/sistema';
-import { historicoTickets, listaProductosInventario, listaClientesData } from '../data/mockData';
+import axios from 'axios';
+import { historicoTickets, listaProductosInventario, listaClientesData } from '../data/mockData'; // Keeping for fallback just in case
 
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000/api';
 const router = useRouter();
 const store = useSistemaStore();
+
+// --- ESTADOS DE REPORTES REALES ---
+const reporteBalance = ref({ ingresos: 0, egresos: 0, compras: 0, utilidad_neta: 0 });
+const reporteLitros = ref({ total_litros: 0, resumen_fechas: [] });
 
 // --- LÓGICA DE ROLES Y SEGURIDAD ---
 const esAdmin = computed(() => store.rolUsuario === 'admin');
@@ -551,7 +557,34 @@ const tabActivaCajero = ref('transacciones-pos');
 const ahora = ref(new Date());
 let timer = null;
 
-onMounted(() => {
+const getAxiosConfig = () => ({ headers: { 'x-user-role': store.rolUsuario } });
+
+const cargarReportesDesdeServidor = async () => {
+    try {
+        const config = getAxiosConfig();
+        const params = `?inicio=${fechaDesdeInput.value}&fin=${fechaHastaInput.value}`;
+        
+        const [resBalance, resLitros] = await Promise.all([
+            axios.get(`${API_URL}/reports/balance${params}`, config),
+            axios.get(`${API_URL}/reports/volume${params}`, config)
+        ]);
+        
+        if (resBalance.data) {
+            // Map actual backend keys to frontend expected keys
+            reporteBalance.value = {
+                ingresos: resBalance.data.estado_resultados?.total_ingresos || 0,
+                egresos: resBalance.data.estado_resultados?.total_gastos || 0,
+                compras: resBalance.data.pasivos || 0, // compras son pasivos
+                utilidad_neta: resBalance.data.estado_resultados?.utilidad_neta || 0
+            };
+        }
+        if (resLitros.data) reporteLitros.value = resLitros.data;
+    } catch (error) {
+        console.error('Error fetching backend reports:', error);
+    }
+};
+
+onMounted(async () => {
   // 1. Seguridad: Ahora permitimos el acceso a Admin, Cajero Y Delivery. Si no es ninguno, va al login.
   if (!esAdmin.value && !esCajero.value && !esDelivery.value) {
     router.push('/login');
@@ -560,11 +593,12 @@ onMounted(() => {
 
   // 2. Carga de datos para Admin
   if (esAdmin.value) {
-    store.fetchGastos();
-    store.fetchCompras();
-    store.fetchHistorialVentas(); 
-    store.fetchClientes();
-    store.fetchInventario();
+    await store.fetchGastos();
+    await store.fetchCompras();
+    await store.fetchHistorialVentas(); 
+    await store.fetchClientes();
+    await store.fetchInventario();
+    await cargarReportesDesdeServidor();
   }
 
   // 3. Ajustes para Delivery
@@ -616,9 +650,12 @@ const fechaHastaInput = ref(hoyISO);
 const fechaDesde = ref(hoyISO);
 const fechaHasta = ref(hoyISO);
 
-const aplicarFiltros = () => {
+const aplicarFiltros = async () => {
   fechaDesde.value = fechaDesdeInput.value;
   fechaHasta.value = fechaHastaInput.value;
+  if (esAdmin.value) {
+    await cargarReportesDesdeServidor();
+  }
 };
 
 // Validación de inputs Date
@@ -746,6 +783,17 @@ const utilidadAcumulada = computed(() => {
 
 
 const totalesFiltrados = computed(() => {
+  if (esAdmin.value && tabActiva.value === 'balance') {
+      return {
+          ventas: 0, // No se usa en balance, pero lo mantenemos por consistencia
+          ingresos: reporteBalance.value.ingresos || 0,
+          egresos: reporteBalance.value.egresos || 0,
+          compras: reporteBalance.value.compras || 0,
+          litros: reporteLitros.value.total_litros || 0
+      };
+  }
+
+  // Lógica local para vistas detalladas de Delivery / Agrupaciones
   const ventas = agrupacionVentas.value.reduce((acc, w) => {
     acc.litros += w.litros;
     acc.ventas += w.ventas;
@@ -770,6 +818,9 @@ const totalesFiltrados = computed(() => {
 });
 
 const kpiUtilidadNeta = computed(() => {
+  if (esAdmin.value && tabActiva.value === 'balance') {
+      return reporteBalance.value.utilidad_neta || 0;
+  }
   return totalesFiltrados.value.ingresos - (totalesFiltrados.value.egresos + totalesFiltrados.value.compras);
 });
 

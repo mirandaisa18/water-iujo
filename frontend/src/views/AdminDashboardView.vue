@@ -302,18 +302,24 @@ const ticketsFiltrados = computed(() => {
   const { lunes, domingo } = getRangoSemana(fechaReferencia.value);
   const lista = store.tickets || [];
   return lista.filter(t => {
-    if (!t.timestamp) {
+    // Manejar t.fecha (del backend) o t.timestamp (del mock local si aún existe)
+    const fechaString = t.fecha || t.timestamp;
+    if (!fechaString) {
        const hoy = new Date();
        return lunes <= hoy && hoy <= domingo;
     }
-    const fechaT = new Date(t.timestamp);
+    const fechaT = new Date(fechaString);
     return fechaT >= lunes && fechaT <= domingo;
   });
 });
 
 // 1. Ventas del Periodo
 const totalVentasPeriodo = computed(() => {
-  return ticketsFiltrados.value.reduce((sum, t) => sum + (t.monto || 0), 0);
+  return ticketsFiltrados.value.reduce((sum, t) => {
+    // Usar total_usd (backend) o monto (fallback local)
+    const montoVenta = parseFloat(t.total_usd) || parseFloat(t.monto) || 0;
+    return sum + montoVenta;
+  }, 0);
 });
 
 // 2. Litros Despachados
@@ -322,11 +328,16 @@ const totalLitros = computed(() => {
   ticketsFiltrados.value.forEach(ticket => {
     if (ticket.items && Array.isArray(ticket.items)) {
       ticket.items.forEach(item => {
-        const cant = Number(item.cant || item.cantidad) || 0;
-        const nombreVal = String(item.nombre || '').toLowerCase();
-        const match = nombreVal.match(/(\d+)l/);
-        if (match) litros += parseInt(match[1]) * cant;
-        else if (nombreVal.includes('botellón') || nombreVal.includes('botellon')) litros += 19 * cant; 
+        const cant = Number(item.cantidad || item.cant) || 0;
+        // El backend puede enviar tamanio_litros o lo derivamos
+        if (item.tamanio_litros) {
+            litros += (Number(item.tamanio_litros) * cant);
+        } else {
+            const nombreVal = String(item.nombre || '').toLowerCase();
+            const match = nombreVal.match(/(\d+)l/);
+            if (match) litros += parseInt(match[1]) * cant;
+            else if (nombreVal.includes('botellón') || nombreVal.includes('botellon')) litros += 20 * cant; 
+        }
       });
     }
   });
@@ -335,13 +346,18 @@ const totalLitros = computed(() => {
 
 // 3. Clientes en el periodo
 const totalClientes = computed(() => {
-  const clientesUnicos = new Set(ticketsFiltrados.value.map(t => t.cliente));
+  // cliente_id (backend) o cliente (fallback)
+  const clientesUnicos = new Set(ticketsFiltrados.value.map(t => t.cliente_id || t.cliente));
   return clientesUnicos.size;
 });
 
 // 4. Delivery y Stock Alerts
 const totalDeliveries = computed(() => {
-  return ticketsFiltrados.value.filter(t => (t.metodo || '').toLowerCase() === 'delivery' || (t.items && t.items.some(i => (i.nombre || '').toLowerCase().includes('delivery')))).length;
+  return ticketsFiltrados.value.filter(t => 
+    (t.metodo_pago || t.metodo || '').toLowerCase().includes('delivery') || 
+    (t.delivery_costo > 0) ||
+    (t.items && t.items.some(i => (i.nombre || '').toLowerCase().includes('delivery')))
+  ).length;
 });
 
 const productosBajoStock = computed(() => {
@@ -356,13 +372,20 @@ const productosBajoStock = computed(() => {
 const distribucion = computed(() => {
   let rec = 0, bot = 0, com = 0;
   ticketsFiltrados.value.forEach(t => {
-    if (t.items) t.items.forEach(item => {
-      const nom = String(item.nombre || '').toLowerCase();
-      const cant = Number(item.cant || item.cantidad) || 0;
-      if (nom.includes('recarga')) rec += cant;
-      else if (nom.includes('botellón') || nom.includes('botellon')) bot += cant;
-      else if (nom.includes('combo')) com += cant;
-    });
+    // Si viene del backend en 'tipo_venta', lo usamos
+    if (t.tipo_venta) {
+        if (t.tipo_venta.includes('recarga')) rec++;
+        else if (t.tipo_venta.includes('botellon')) bot++;
+        else if (t.tipo_venta.includes('combo')) com++;
+    } else if (t.items) {
+        t.items.forEach(item => {
+          const nom = String(item.nombre || '').toLowerCase();
+          const cant = Number(item.cantidad || item.cant) || 0;
+          if (nom.includes('recarga')) rec += cant;
+          else if (nom.includes('botellón') || nom.includes('botellon')) bot += cant;
+          else if (nom.includes('combo')) com += cant;
+        });
+    }
   });
   const totalProd = rec + bot + com || 1;
   return {
@@ -379,17 +402,21 @@ const litrosPorDia = computed(() => {
   const hoy = new Date();
   
   ticketsFiltrados.value.forEach(t => {
-    const fechaT = t.timestamp ? new Date(t.timestamp) : hoy;
+    const fechaT = t.fecha ? new Date(t.fecha) : (t.timestamp ? new Date(t.timestamp) : hoy);
     const d = fechaT.getDay();
     const idx = d === 0 ? 6 : d - 1;
 
     if (t.items) {
       t.items.forEach(item => {
-        const cant = Number(item.cant || item.cantidad) || 0;
-        const nom = String(item.nombre || '').toLowerCase();
-        const match = nom.match(/(\d+)l/);
-        if (match) result[idx] += parseInt(match[1]) * cant;
-        else if (nom.includes('botellón') || nom.includes('botellon')) result[idx] += 19 * cant;
+        const cant = Number(item.cantidad || item.cant) || 0;
+        if (item.tamanio_litros) {
+            result[idx] += (Number(item.tamanio_litros) * cant);
+        } else {
+            const nom = String(item.nombre || '').toLowerCase();
+            const match = nom.match(/(\d+)l/);
+            if (match) result[idx] += parseInt(match[1]) * cant;
+            else if (nom.includes('botellón') || nom.includes('botellon')) result[idx] += 20 * cant;
+        }
       });
     }
   });

@@ -13,7 +13,7 @@ export const checkRole = (rolesPermitidos: string[]) => {
         const token = authHeader.split(' ')[1];
         try {
             const decoded = jwt.verify(token, JWT_SECRET) as any;
-            req.user = decoded; // Adjuntar info del usuario al request
+            (req as any).user = decoded; // Adjuntar info del usuario al request
 
             if (!rolesPermitidos.includes(decoded.rol)) {
                 return res.status(403).json({

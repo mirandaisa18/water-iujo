@@ -29,8 +29,8 @@ router.post('/clientes/registrar', checkRole(['admin', 'cajero']), registrarClie
 router.get('/tasa', getTasa);
 
 // Endpoint Ventas
-router.post('/ventas/registrar', checkRole(['cajero']), registrarVenta);
-router.get('/ventas/historial', checkRole(['admin']), getHistorialVentas);
+router.post('/ventas/registrar', checkRole(['admin', 'cajero']), registrarVenta);
+router.get('/ventas/historial', checkRole(['admin', 'cajero']), getHistorialVentas);
 
 // Endpoint Alertas
 router.get('/alertas', getAlertas);

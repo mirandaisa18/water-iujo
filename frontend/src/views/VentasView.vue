@@ -702,6 +702,7 @@ const carrito = ref([]);
 const metodosDePago = ref([]); // [{ metodo: 'Efectivo', monto: 0, montoBS: 0 }]
 
 const totalPagadoUSD = computed(() => metodosDePago.value.reduce((sum, p) => sum + p.monto, 0));
+
 const faltanteUSD = computed(() => {
   const diff = totalUSD.value - totalPagadoUSD.value;
   return diff > 0.01 ? diff : 0; // Evitar problemas de coma flotante
@@ -1006,11 +1007,20 @@ watch(usarDireccionRegistrada, (val) => {
 });
 
 
-// PRODUCTOS MOCK (Agregamos cantidadTemp para el contador)
-const listaProductosPOS = ref(listaProductosInventario);
-
+// PRODUCTOS DESDE BASE DE DATOS
+const listaProductosPOS = computed(() => {
+  return (store.inventario || []).filter(p => {
+    // Mostrar solo si está marcado para la venta
+    // p.paraVenta puede venir como 1/0 o true/false
+    return p.paraVenta === 1 || p.para_venta === 1 || p.paraVenta === true;
+  }).map(p => ({
+    ...p,
+    esServicio: p.tipo && (p.tipo.toLowerCase() === 'servicio' || p.tipo.toLowerCase() === 'recarga')
+  }));
+});
 
 // ESTADO NOTIFICACIONES Y PEDIDOS WEB
+
 const showNotificaciones = ref(false);
 
 const aprobarPedido = (notif) => {
@@ -1119,7 +1129,7 @@ const guardarNuevoCliente = async () => {
   }
 };
 
-const procesarPago = () => {
+const procesarPago = async () => {
   // 1. VALIDACIÓN: Carrito no vacío
   if (carrito.value.length === 0) {
     alert('⚠️ El carrito está vacío. Agregue productos para continuar.');
@@ -1144,13 +1154,12 @@ const procesarPago = () => {
   }
 
   const ahora = new Date();
-  facturaRegistradaPerSale.value = false; // Reiniciar bandera para esta nueva factura
   
   // Guardamos los datos para la factura
   // Formateamos el número a correlativo (ej: 001, 002)
   const correlativo = store.proximoNumeroFactura.toString().padStart(3, '0');
   
-  datosFactura.value = {
+  const payloadFactura = {
     numero: correlativo,
     timestamp: ahora.toISOString(),
     fecha: ahora.toLocaleDateString(),
@@ -1165,6 +1174,7 @@ const procesarPago = () => {
     totalUSD: totalUSD.value,
     totalBS: totalBS.value,
     metodo: metodosDePago.value.length === 1 ? metodosDePago.value[0].metodo : 'PAGOS MÚLTIPLES',
+    monto: totalUSD.value, // Incluir monto explícitamente para el backend
     delivery: delivery.value ? {
        costo: costoDelivery.value,
        direccion: destinosYummy.value[destinosYummy.value.length - 1].direccion || direccionDeliverySimple.value || 'N/A',
@@ -1174,16 +1184,18 @@ const procesarPago = () => {
     } : null
   };
 
-  // Mostrar modal de factura y registrar de inmediato
-  showFacturaModal.value = true;
+  // Registrar de inmediato en el Backend antes de mostrar el modal
+  const res = await store.registrarVentaGlobal(payloadFactura);
   
-  if (datosFactura.value && !facturaRegistradaPerSale.value) {
-    store.registrarVentaGlobal({
-      ...datosFactura.value,
-      monto: totalUSD.value,
-      metodo: metodosDePago.value.length > 1 ? 'Múltiple' : metodosDePago.value[0].metodo
-    });
-    facturaRegistradaPerSale.value = true;
+  if (res.success) {
+    // Si es exitoso, mostrar modal de factura
+    datosFactura.value = payloadFactura;
+    showFacturaModal.value = true;
+    
+    // El correlativo se incrementa al imprimir, o se puede forzar acá si no se imprime
+  } else {
+    // Mostrar error validado por el backend (Ej: Stock Insuficiente)
+    alert(`❌ No se pudo procesar la venta:\n\n${res.error}`);
   }
 };
 
@@ -1213,6 +1225,10 @@ let bcvInterval = null;
 onMounted(async () => {
   console.log('DEBUG: VentasView Mounted');
   await store.fetchClientes(); // Cargar la lista de clientes desde la DB
+  await store.fetchInventario(); // Cargar inventario para el POS
+  if (esAdmin.value) {
+    await store.fetchHistorialVentas(); // Cargar KPIs para el Admin
+  }
   await fetchTasa(); // Cargar tasa al iniciar
   // Auto-Actualizar la tasa BCV en segundo plano cada 10 minutos
   bcvInterval = setInterval(fetchTasa, 600000);
