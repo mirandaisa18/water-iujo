@@ -15,9 +15,12 @@
           </p>
         </div>
         
-        <div class="header-actions">
-          <button v-if="esAdmin" class="btn-descargar">
-            <span class="icono-descarga">📥</span> Descargar Reporte
+        <div class="header-actions" style="display: flex; gap: 10px; align-items: center;">
+          <button v-if="esAdmin" class="btn-descargar" @click="exportarPDF">
+            <span class="icono-descarga">📥</span> Exportar PDF
+          </button>
+          <button v-if="esAdmin" class="btn-descargar" @click="exportarExcel" style="background: #2563eb; box-shadow: 0 4px 12px rgba(37, 99, 235, 0.2);">
+            <span class="icono-descarga">📊</span> Exportar Excel
           </button>
           
           <div class="perfil-usuario-top" @click="router.push('/configuracion')">
@@ -29,6 +32,7 @@
           </div>
         </div>
       </header>
+
 
       <div v-if="esAdmin || esDelivery" class="vista-admin-dashboard">
         
@@ -149,6 +153,10 @@
               <div style="background: #f0fdf4; padding: 20px; border-radius: 12px; border: 1px solid #bbf7d0;">
                 <h4 style="color: #166534; margin: 0; font-size: 12px; text-transform: uppercase;">Ingresos (Ventas)</h4>
                 <p style="color: #15803d; font-size: 28px; font-weight: 800; margin: 5px 0;">${{ totalesFiltrados.ingresos.toFixed(2) }}</p>
+                <div v-if="esAdmin" style="font-size: 12px; color: #166534; margin-top: 10px; border-top: 1px dashed #bbf7d0; padding-top: 10px; display: flex; flex-direction: column; gap: 4px;">
+                   <div style="display: flex; justify-content: space-between;"><span>💧 Solo Recargas:</span> <strong>${{ (reporteBalance?.estado_resultados?.ingresos_recargas || 0).toFixed(2) }}</strong></div>
+                   <div style="display: flex; justify-content: space-between;"><span>📦 Botellones Nuevos/Combos:</span> <strong>${{ (reporteBalance?.estado_resultados?.ingresos_botellones || 0).toFixed(2) }}</strong></div>
+                </div>
               </div>
               <div style="background: #fff7ed; padding: 20px; border-radius: 12px; border: 1px solid #ffedd5;">
                 <h4 style="color: #9a3412; margin: 0; font-size: 12px; text-transform: uppercase;">Egresos (Gastos)</h4>
@@ -221,7 +229,18 @@
                   <tr><th>SEMANA / FECHA</th><th>LITROS</th><th># VENTAS</th><th>INGRESOS</th></tr>
                 </thead>
                 <tbody>
-                  <template v-for="week in agrupacionVentas" :key="week.date">
+                  <template v-if="esAdmin && reporteLitros?.desglose_fechas">
+                    <tr v-for="d in reporteLitros.desglose_fechas" :key="d.fecha" style="background: #ffffff; border-bottom: 1px solid #f1f5f9;">
+                      <td><strong>{{ d.fecha }}</strong></td>
+                      <td style="color: #2563eb;"><strong>{{ d.litros }} L</strong></td>
+                      <td><strong>{{ d.numero_ventas }}</strong></td>
+                      <td class="negrita" style="color: #10b981;">${{ (d.ingresos || 0).toFixed(2) }}</td>
+                    </tr>
+                    <tr v-if="reporteLitros.desglose_fechas.length === 0">
+                      <td colspan="4" style="text-align: center; color: #94a3b8; font-style: italic;">No hay operaciones registradas en las fechas seleccionadas.</td>
+                    </tr>
+                  </template>
+                  <template v-else v-for="week in agrupacionVentas" :key="week.date">
                     <tr @click="toggleSemana(week.date)" style="cursor: pointer; background: #f8fafc;">
                       <td><strong>{{ week.label }}</strong> <span style="font-size:10px; color:#3b82f6; margin-left:10px;">{{ semanasExpandidas[week.date] ? '▲ Ocultar días' : '▼ Ver días' }}</span></td>
                       <td><strong>{{ week.litros }} L</strong></td>
@@ -235,12 +254,23 @@
                       <td style="font-size: 13px; color: #475569;">${{ dy.ingresos.toFixed(2) }}</td>
                     </tr>
                   </template>
-                  <tr v-if="agrupacionVentas.length === 0">
+                  <tr v-if="!esAdmin && agrupacionVentas.length === 0">
                     <td colspan="4" style="text-align: center; color: #94a3b8; font-style: italic;">No hay operaciones registradas en las fechas seleccionadas.</td>
                   </tr>
                 </tbody>
                 <tfoot>
-                  <tr><td class="total-texto">TOTAL RANGO</td><td class="total-azul">{{ totalesFiltrados.litros }} L</td><td class="total-negro">{{ totalesFiltrados.ventas }}</td><td class="total-azul">${{ totalesFiltrados.ingresos.toFixed(2) }}</td></tr>
+                  <tr v-if="esAdmin && reporteLitros?.desglose_fechas">
+                    <td class="total-texto">TOTAL RANGO</td>
+                    <td class="total-azul">{{ reporteLitros.total_litros_mes }} L</td>
+                    <td class="total-negro">{{ reporteLitros.desglose_fechas.reduce((s, d) => s + d.numero_ventas, 0) }}</td>
+                    <td class="total-azul">${{ reporteLitros.desglose_fechas.reduce((s, d) => s + (d.ingresos || 0), 0).toFixed(2) }}</td>
+                  </tr>
+                  <tr v-else>
+                    <td class="total-texto">TOTAL RANGO</td>
+                    <td class="total-azul">{{ totalesFiltrados.litros }} L</td>
+                    <td class="total-negro">{{ totalesFiltrados.ventas }}</td>
+                    <td class="total-azul">${{ totalesFiltrados.ingresos.toFixed(2) }}</td>
+                  </tr>
                 </tfoot>
               </table>
             </div>
@@ -538,6 +568,7 @@ import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { useSistemaStore } from '../stores/sistema';
 import axios from 'axios';
+import html2pdf from 'html2pdf.js';
 import { historicoTickets, listaProductosInventario, listaClientesData } from '../data/mockData'; // Keeping for fallback just in case
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000/api';
@@ -570,18 +601,62 @@ const cargarReportesDesdeServidor = async () => {
         ]);
         
         if (resBalance.data) {
-            // Map actual backend keys to frontend expected keys
-            reporteBalance.value = {
-                ingresos: resBalance.data.estado_resultados?.total_ingresos || 0,
-                egresos: resBalance.data.estado_resultados?.total_gastos || 0,
-                compras: resBalance.data.pasivos || 0, // compras son pasivos
-                utilidad_neta: resBalance.data.estado_resultados?.utilidad_neta || 0
-            };
+            reporteBalance.value = resBalance.data;
         }
-        if (resLitros.data) reporteLitros.value = resLitros.data;
+        if (resLitros.data) {
+            reporteLitros.value = resLitros.data;
+        }
     } catch (error) {
         console.error('Error fetching backend reports:', error);
     }
+};
+
+const exportarPDF = () => {
+  const element = document.querySelector('.vista-admin-dashboard');
+  if (!element) return;
+  const opt = {
+    margin: [10, 10, 10, 10],
+    filename: `Reporte_General_WaterIujo_${fechaDesde.value}_al_${fechaHasta.value}.pdf`,
+    image: { type: 'jpeg', quality: 0.98 },
+    html2canvas: { scale: 2, useCORS: true },
+    jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+  };
+  html2pdf().from(element).set(opt).save();
+};
+
+const exportarExcel = () => {
+   let csv = 'REPORTE FINANCIERO WATER IUJO\n';
+   csv += `Periodo:,${fechaDesde.value} al ${fechaHasta.value}\n\n`;
+   csv += 'BALANCE GENERAL\n';
+   csv += `Caja y Ventas Acumuladas,$${(reporteBalance.value?.suma_ventas || 0).toFixed(2)}\n`;
+   csv += `Valor Inventario Botellones,$${(reporteBalance.value?.valor_inventario || 0).toFixed(2)}\n`;
+   csv += `TOTAL ACTIVOS,$${(reporteBalance.value?.activos || 0).toFixed(2)}\n\n`;
+   csv += `Cuentas por Pagar (Compras / Pasivos),$${(reporteBalance.value?.pasivos || 0).toFixed(2)}\n`;
+   csv += `PATRIMONIO NETO,$${(reporteBalance.value?.patrimonio || 0).toFixed(2)}\n\n`;
+   csv += 'ESTADO DE RESULTADOS\n';
+   csv += `Ingresos Solo Recargas,$${(reporteBalance.value?.estado_resultados?.ingresos_recargas || 0).toFixed(2)}\n`;
+   csv += `Ingresos Venta Botellones,$${(reporteBalance.value?.estado_resultados?.ingresos_botellones || 0).toFixed(2)}\n`;
+   csv += `TOTAL INGRESOS,$${(reporteBalance.value?.estado_resultados?.total_ingresos || 0).toFixed(2)}\n\n`;
+   csv += `Gastos Operativos (OPEX),$${(reporteBalance.value?.estado_resultados?.gastos_operativos || 0).toFixed(2)}\n`;
+   csv += `Compras de Insumos,$${(reporteBalance.value?.estado_resultados?.compras || 0).toFixed(2)}\n`;
+   csv += `TOTAL GASTOS Y COSTOS,$${(reporteBalance.value?.estado_resultados?.total_gastos || 0).toFixed(2)}\n\n`;
+   csv += `UTILIDAD NETA,$${(reporteBalance.value?.estado_resultados?.utilidad_neta || 0).toFixed(2)}\n\n`;
+   csv += 'DESGLOSE DE VOLUMEN (LITROS DESPACHADOS)\n';
+   csv += 'Fecha,Litros,N° Ventas,Ingresos USD\n';
+   if (reporteLitros.value?.desglose_fechas) {
+      reporteLitros.value.desglose_fechas.forEach(d => {
+         csv += `${d.fecha},${d.litros},${d.numero_ventas},$${(d.ingresos || 0).toFixed(2)}\n`;
+      });
+   }
+   
+   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+   const link = document.createElement("a");
+   const url = URL.createObjectURL(blob);
+   link.setAttribute("href", url);
+   link.setAttribute("download", `Reporte_Financiero_WaterIujo_${fechaDesde.value}.csv`);
+   document.body.appendChild(link);
+   link.click();
+   document.body.removeChild(link);
 };
 
 onMounted(async () => {
@@ -765,18 +840,30 @@ const agrupacionVentas = computed(() => {
 
 // LÓGICA DE BALANCE GENERAL (TOTALES HISTÓRICOS)
 const sumaCajaTotal = computed(() => {
+  if (esAdmin.value && reporteBalance.value?.suma_ventas !== undefined) {
+      return reporteBalance.value.suma_ventas;
+  }
   return store.tickets.reduce((s, t) => s + (t.monto || 0), 0);
 });
 
 const valorInventarioTotal = computed(() => {
+  if (esAdmin.value && reporteBalance.value?.valor_inventario !== undefined) {
+      return reporteBalance.value.valor_inventario;
+  }
   return store.inventario.reduce((s, p) => s + ((p.stock || p.Stock_Actual || 0) * (p.precio || p.precioVenta || 0)), 0);
 });
 
 const pasivosTotal = computed(() => {
+  if (esAdmin.value && reporteBalance.value?.pasivos !== undefined) {
+      return reporteBalance.value.pasivos;
+  }
   return store.compras.reduce((s, c) => s + (c.total || 0), 0);
 });
 
 const utilidadAcumulada = computed(() => {
+  if (esAdmin.value && reporteBalance.value?.patrimonio !== undefined) {
+      return reporteBalance.value.patrimonio;
+  }
   const gastosTotales = store.gastos.reduce((s, g) => s + (g.monto || 0), 0);
   return sumaCajaTotal.value - (gastosTotales + pasivosTotal.value);
 });
@@ -785,11 +872,11 @@ const utilidadAcumulada = computed(() => {
 const totalesFiltrados = computed(() => {
   if (esAdmin.value && tabActiva.value === 'balance') {
       return {
-          ventas: 0, // No se usa en balance, pero lo mantenemos por consistencia
-          ingresos: reporteBalance.value.ingresos || 0,
-          egresos: reporteBalance.value.egresos || 0,
-          compras: reporteBalance.value.compras || 0,
-          litros: reporteLitros.value.total_litros || 0
+          ventas: 0,
+          ingresos: reporteBalance.value?.estado_resultados?.total_ingresos || 0,
+          egresos: reporteBalance.value?.estado_resultados?.gastos_operativos || 0,
+          compras: reporteBalance.value?.estado_resultados?.compras || 0,
+          litros: reporteLitros.value?.total_litros_mes || 0
       };
   }
 
@@ -819,7 +906,7 @@ const totalesFiltrados = computed(() => {
 
 const kpiUtilidadNeta = computed(() => {
   if (esAdmin.value && tabActiva.value === 'balance') {
-      return reporteBalance.value.utilidad_neta || 0;
+      return reporteBalance.value?.estado_resultados?.utilidad_neta || 0;
   }
   return totalesFiltrados.value.ingresos - (totalesFiltrados.value.egresos + totalesFiltrados.value.compras);
 });

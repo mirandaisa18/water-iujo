@@ -18,6 +18,27 @@ export const initDB = async () => {
       )
     `);
 
+    // 1.5. Rol
+    await sequelize.query(`
+      CREATE TABLE IF NOT EXISTS Rol (
+        ID_Rol VARCHAR(255) PRIMARY KEY NOT NULL UNIQUE,
+        Nombre_Rol VARCHAR(255)
+      )
+    `);
+
+    // Insertar roles base si no existen
+    const roles = [
+      { id: 'admin', nombre: 'Administrador' },
+      { id: 'cajero', nombre: 'Cajero' },
+      { id: 'delivery', nombre: 'Repartidor' },
+      { id: 'cliente', nombre: 'Cliente' }
+    ];
+    for (const r of roles) {
+      await sequelize.query(`
+        INSERT OR IGNORE INTO Rol (ID_Rol, Nombre_Rol) VALUES (?, ?)
+      `, { replacements: [r.id, r.nombre] });
+    }
+
     // 2. Usuario
     await sequelize.query(`
       CREATE TABLE IF NOT EXISTS Usuario (
@@ -27,7 +48,8 @@ export const initDB = async () => {
         Correo VARCHAR(255),
         ID_Rol VARCHAR(255),
         Contraseña VARCHAR(255),
-        Direccion VARCHAR(255)
+        Direccion VARCHAR(255),
+        FOREIGN KEY (ID_Rol) REFERENCES Rol(ID_Rol)
       )
     `);
 
@@ -151,15 +173,30 @@ export const initDB = async () => {
 
     console.log('Tablas validadas correctamente.');
 
-    // Validar si existe administrador, si no crearlo
-    const [existingUsers]: any = await sequelize.query("SELECT COUNT(*) as count FROM Usuario");
-    if (existingUsers[0].count === 0) {
-        console.log('Seeding admin user...');
-        const hash = bcrypt.hashSync('password', 10);
-        await sequelize.query(`
-            INSERT INTO Usuario (Cedula_Usuario, Nombre, Apellido, Correo, ID_Rol, Contraseña)
-            VALUES ('V-00000001', 'Admin', 'Sistema', 'admin@water.com', 'admin', ?)
-        `, { replacements: [hash] });
+    // Asegurar los 4 usuarios de roles estándar según la especificación del sistema
+    const defaultUsers = [
+        { cedula: 'V-00000000', nombre: 'Admin Master', apellido: 'Sistema', correo: 'admin@wateriujo.com', rol: 'admin', pass: '123', direccion: 'Sede Principal' },
+        { cedula: 'V-11111111', nombre: 'Cajero Principal', apellido: 'Caja', correo: 'caja@wateriujo.com', rol: 'cajero', pass: '1234', direccion: 'Sede Principal' },
+        { cedula: 'V-22222222', nombre: 'Repartidor 1', apellido: 'Delivery', correo: 'delivery@wateriujo.com', rol: 'delivery', pass: '123456', direccion: 'Zona Este' },
+        { cedula: 'V-33333333', nombre: 'Cliente General', apellido: 'Cliente', correo: 'cliente@wateriujo.com', rol: 'cliente', pass: '12345', direccion: 'Zona Centro' }
+    ];
+
+    console.log('Verificando y asegurando usuarios de roles estándar...');
+    for (const u of defaultUsers) {
+        const [exist]: any = await sequelize.query('SELECT Correo FROM Usuario WHERE Correo = ? OR Cedula_Usuario = ?', { replacements: [u.correo, u.cedula] });
+        const hash = bcrypt.hashSync(u.pass, 10);
+        if (exist.length === 0) {
+            console.log(`Creando usuario ${u.rol}: ${u.correo}...`);
+            await sequelize.query(`
+                INSERT INTO Usuario (Cedula_Usuario, Nombre, Apellido, Correo, ID_Rol, Contraseña, Direccion)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            `, { replacements: [u.cedula, u.nombre, u.apellido, u.correo, u.rol, hash, u.direccion] });
+        } else {
+            // Asegurar que la contraseña y datos estén actualizados
+            await sequelize.query(`
+                UPDATE Usuario SET Nombre = ?, Contraseña = ?, ID_Rol = ?, Direccion = ? WHERE Correo = ? OR Cedula_Usuario = ?
+            `, { replacements: [u.nombre, hash, u.rol, u.direccion, u.correo, u.cedula] });
+        }
     }
 
   } catch (error) {

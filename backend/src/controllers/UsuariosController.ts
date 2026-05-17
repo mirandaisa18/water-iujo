@@ -23,8 +23,8 @@ export const registrarEmpleado = async (req: Request, res: Response) => {
             return res.status(400).json({ error: 'Datos de empleado incompletos (correo, nombre, rol, password son obligatorios)' });
         }
         
-        if (!['admin', 'cajero', 'delivery'].includes(rol)) {
-            return res.status(400).json({ error: 'Rol inválido. Debe ser admin, cajero o delivery.' });
+        if (!['admin', 'cajero', 'delivery', 'cliente'].includes(rol)) {
+            return res.status(400).json({ error: 'Rol inválido. Debe ser admin, cajero, delivery o cliente.' });
         }
 
         const cedulaFinal = cedula || `V-${Date.now()}`;

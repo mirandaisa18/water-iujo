@@ -3,48 +3,79 @@ import { sequelize } from '../config/db';
 
 export const getBalanceReport = async (req: Request, res: Response) => {
     try {
-        const [ventasData]: any = await sequelize.query(`SELECT SUM(total_usd) as suma_ventas FROM ventas`);
+        const fechaInicio = req.query.inicio || req.query.fechaInicio;
+        const fechaFin = req.query.fin || req.query.fechaFin;
+
+        let dateWhereVentas = '';
+        let dateWhereCompras = '';
+        let dateWhereGastos = '';
+        const replacementsVentas: any[] = [];
+        const replacementsCompras: any[] = [];
+        const replacementsGastos: any[] = [];
+
+        if (fechaInicio && fechaFin) {
+            dateWhereVentas = ` WHERE fecha BETWEEN ? AND ?`;
+            replacementsVentas.push(fechaInicio, `${fechaFin} 23:59:59`);
+            
+            dateWhereCompras = ` WHERE fecha BETWEEN ? AND ?`;
+            replacementsCompras.push(fechaInicio, `${fechaFin} 23:59:59`);
+            
+            dateWhereGastos = ` WHERE Fecha BETWEEN ? AND ?`;
+            replacementsGastos.push(fechaInicio, `${fechaFin} 23:59:59`);
+        }
+
+        // 1. Suma ventas
+        const [ventasData]: any = await sequelize.query(`SELECT SUM(total_usd) as suma_ventas FROM ventas` + dateWhereVentas, { replacements: replacementsVentas });
         const sumaVentas = ventasData[0]?.suma_ventas || 0;
 
-        const [inventarioData]: any = await sequelize.query(`
-            SELECT SUM(
-                COALESCE(
-                    (SELECT s.Cantidad FROM Stock s WHERE s.ID_Producto = p.ID_Producto ORDER BY s.Fecha_Movimiento DESC LIMIT 1),
-                    0
-                ) * COALESCE(p.Precio_Producto, 0)
-            ) as valor_inventario
-            FROM Producto p
-        `);
+        // 2. Valor inventario (stock_botellones x precio_venta)
+        const [inventarioData]: any = await sequelize.query(`SELECT SUM(Stock_Actual * COALESCE(Precio_Producto, 0)) as valor_inventario FROM Producto`);
         const valorInventario = inventarioData[0]?.valor_inventario || 0;
 
+        // Activos = suma ventas + (stock_botellones x precio_venta)
         const activos = sumaVentas + valorInventario;
 
-        const [comprasData]: any = await sequelize.query(`SELECT SUM(total) as suma_compras FROM compras`);
+        // 3. Pasivos = Suma compras pendientes/realizadas a proveedores
+        const [comprasData]: any = await sequelize.query(`SELECT SUM(total) as suma_compras FROM compras` + dateWhereCompras, { replacements: replacementsCompras });
         const pasivos = comprasData[0]?.suma_compras || 0;
 
+        // 4. Patrimonio = Activos - Pasivos
         const patrimonio = activos - pasivos;
 
+        // 5. Estado de Resultados
         const [ingresosRecargas]: any = await sequelize.query(`
             SELECT SUM(total_usd) as ingresos FROM ventas WHERE tipo_venta = 'solo_recarga'
-        `);
+        ` + (fechaInicio && fechaFin ? ` AND fecha BETWEEN ? AND ?` : ''), { replacements: replacementsVentas });
+        
         const [ingresosBotellones]: any = await sequelize.query(`
             SELECT SUM(total_usd) as ingresos FROM ventas WHERE tipo_venta IN ('botellon_nuevo', 'combo')
-        `);
-        const totalIngresos = (ingresosRecargas[0]?.ingresos || 0) + (ingresosBotellones[0]?.ingresos || 0);
+        ` + (fechaInicio && fechaFin ? ` AND fecha BETWEEN ? AND ?` : ''), { replacements: replacementsVentas });
 
-        const [gastosData]: any = await sequelize.query(`SELECT SUM(Monto) as suma_gastos FROM Gasto`);
-        const totalGastos = gastosData[0]?.suma_gastos || 0;
+        const valRecargas = ingresosRecargas[0]?.ingresos || 0;
+        const valBotellones = ingresosBotellones[0]?.ingresos || 0;
+        const totalIngresos = sumaVentas; // Garantiza que los ingresos coincidan exactamente con la suma de ventas
 
+        const [gastosData]: any = await sequelize.query(`SELECT SUM(Monto) as suma_gastos FROM Gasto` + dateWhereGastos, { replacements: replacementsGastos });
+        const gastosOperativos = gastosData[0]?.suma_gastos || 0;
+
+        // Gastos = Suma de gastos operativos + compras
+        const totalGastos = gastosOperativos + pasivos;
+
+        // Utilidad Neta = Ingresos - Gastos
         const utilidadNeta = totalIngresos - totalGastos;
 
         res.json({
             activos,
+            suma_ventas: sumaVentas,
+            valor_inventario: valorInventario,
             pasivos,
             patrimonio,
             estado_resultados: {
-                ingresos_recargas: ingresosRecargas[0]?.ingresos || 0,
-                ingresos_botellones: ingresosBotellones[0]?.ingresos || 0,
+                ingresos_recargas: valRecargas,
+                ingresos_botellones: valBotellones,
                 total_ingresos: totalIngresos,
+                gastos_operativos: gastosOperativos,
+                compras: pasivos,
                 total_gastos: totalGastos,
                 utilidad_neta: utilidadNeta
             }
@@ -57,40 +88,43 @@ export const getBalanceReport = async (req: Request, res: Response) => {
 
 export const getVolumeReport = async (req: Request, res: Response) => {
     try {
-        const { fechaInicio, fechaFin } = req.query;
+        const fechaInicio = req.query.inicio || req.query.fechaInicio;
+        const fechaFin = req.query.fin || req.query.fechaFin;
+
         if (fechaInicio && fechaFin && new Date(fechaInicio as string) > new Date(fechaFin as string)) {
             return res.status(400).json({ error: 'Rango de fechas inválido' });
         }
 
-        let query = `
-            SELECT SUM(dv.cantidad * dv.tamanio_litros) as total_litros
-            FROM detalle_ventas dv
-            JOIN ventas v ON dv.venta_id = v.id
-        `;
         const replacements: any[] = [];
-
+        let whereVentas = '';
         if (fechaInicio && fechaFin) {
-            query += ` WHERE v.fecha BETWEEN ? AND ?`;
+            whereVentas = ` WHERE v.fecha BETWEEN ? AND ?`;
             replacements.push(fechaInicio, `${fechaFin} 23:59:59`);
         }
 
-        const [volumenData]: any = await sequelize.query(query, { replacements });
-        let total_litros = volumenData[0]?.total_litros || 0;
+        let query = `
+            SELECT SUM(dv.cantidad * COALESCE(NULLIF(dv.tamanio_litros, 0), CAST(REPLACE(REPLACE(p.Nombre_Prodcuto, 'L', ''), ' ', '') AS REAL), 0)) as total_litros
+            FROM detalle_ventas dv
+            LEFT JOIN Producto p ON dv.producto_id = p.ID_Producto
+            JOIN ventas v ON dv.venta_id = v.id
+            ${whereVentas}
+        `;
 
-        if (!total_litros) {
-            const [fallbackData]: any = await sequelize.query(`
-                SELECT SUM(dv.cantidad * 
-                    COALESCE(dv.tamanio_litros,
-                        CAST(REPLACE(REPLACE(p.Nombre_Prodcuto, 'L', ''), ' ', '') AS REAL)
-                    )
-                ) as litros
-                FROM detalle_ventas dv
-                LEFT JOIN Producto p ON dv.producto_id = p.ID_Producto
-                JOIN ventas v ON dv.venta_id = v.id
-                ${fechaInicio && fechaFin ? 'WHERE v.fecha BETWEEN ? AND ?' : ''}
-            `, { replacements: fechaInicio && fechaFin ? replacements : [] });
-            total_litros = fallbackData[0]?.litros || 0;
-        }
+        const [volumenData]: any = await sequelize.query(query, { replacements });
+        const total_litros = volumenData[0]?.total_litros || 0;
+
+        // Desglose por fechas para la tabla del reporte
+        let queryDesglose = `
+            SELECT SUBSTR(v.fecha, 1, 10) as fecha, COUNT(DISTINCT v.id) as numero_ventas, SUM(v.total_usd) as ingresos, SUM(dv.cantidad * COALESCE(NULLIF(dv.tamanio_litros, 0), CAST(REPLACE(REPLACE(p.Nombre_Prodcuto, 'L', ''), ' ', '') AS REAL), 0)) as litros
+            FROM ventas v
+            LEFT JOIN detalle_ventas dv ON v.id = dv.venta_id
+            LEFT JOIN Producto p ON dv.producto_id = p.ID_Producto
+            ${whereVentas}
+            GROUP BY SUBSTR(v.fecha, 1, 10)
+            ORDER BY fecha DESC
+        `;
+
+        const [desgloseData]: any = await sequelize.query(queryDesglose, { replacements });
 
         const tendencia_semanal = [
             { fecha: 'Lun', litros: total_litros * 0.1 },
@@ -104,6 +138,7 @@ export const getVolumeReport = async (req: Request, res: Response) => {
 
         res.json({
             total_litros_mes: total_litros,
+            desglose_fechas: desgloseData,
             tendencia_semanal
         });
     } catch (e) {
